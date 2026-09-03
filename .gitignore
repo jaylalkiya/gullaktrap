@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*.db
+*.db-wal
+*.db-shm
+*_logs.json
+ssh_host_key.rsa
+quarantine/
+uploads/
+ftp_files/
+ssh_files/
+telnet_files/
