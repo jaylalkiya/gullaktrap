@@ -21,7 +21,7 @@ REPORT_TEMPLATE = r"""<!DOCTYPE html>
 <style>
   :root{
     --ink:#14181f; --muted:#5b6472; --line:#e2e6ec; --bg:#f4f6f9;
-    --card:#ffffff; --brand:#7b2ff7; --crit:#d6335b; --warn:#e08a1e;
+    --card:#ffffff; --brand:#4f46e5; --crit:#e11d48; --warn:#d97706;
     --ok:#2fa860; --info:#2f7fe0;
   }
   *{box-sizing:border-box}

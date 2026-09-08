@@ -145,18 +145,21 @@ class TelnetHoneypot:
             i += 1
         return bytes(out)
 
-    def _readline(self, sock, echo=True, mask=False, limit=200):
-        """Read one CR/LF terminated line, handling IAC and backspace."""
+    def _readline(self, sock, pending, echo=True, mask=False, limit=200):
+        """Read one CR/LF terminated line, handling IAC and backspace.
+
+        `pending` is a bytearray of already-received, IAC-stripped bytes that
+        outlives a single call. Bots and scanners routinely pipeline the whole
+        session -- ``user\\r\\npass\\r\\ncmd\\r\\n`` -- into one packet; without a
+        carry-over buffer every byte past the first newline would be dropped
+        and the login/command stream would desync. Draining `pending` before
+        touching the socket keeps every line.
+        """
         buf = bytearray()
         while True:
-            try:
-                chunk = sock.recv(64)
-            except (socket.timeout, OSError):
-                return None
-            if not chunk:
-                return None
-
-            for byte in self._strip_iac(chunk):
+            # Consume buffered bytes before blocking on another recv.
+            while pending:
+                byte = pending.pop(0)
                 if byte in (13, 10):
                     if buf or byte == 13:
                         try:
@@ -183,6 +186,14 @@ class TelnetHoneypot:
                     except OSError:
                         return None
 
+            try:
+                chunk = sock.recv(256)
+            except (socket.timeout, OSError):
+                return None
+            if not chunk:
+                return None
+            pending.extend(self._strip_iac(chunk))
+
     # ------------------------------------------------------------------
     # session
     # ------------------------------------------------------------------
@@ -203,6 +214,9 @@ class TelnetHoneypot:
 
         username = password = None
         commands = 0
+        # One carry-over buffer for the whole session so pipelined lines
+        # survive across the login prompts and the command loop.
+        pending = bytearray()
 
         try:
             self._negotiate(sock)
@@ -210,12 +224,12 @@ class TelnetHoneypot:
 
             # Mirai-family bots expect exactly this prompt pair.
             sock.sendall(b'%s login: ' % self.HOSTNAME.encode())
-            username = self._readline(sock)
+            username = self._readline(sock, pending)
             if username is None:
                 return
 
             sock.sendall(b'Password: ')
-            password = self._readline(sock, mask=False, echo=False)
+            password = self._readline(sock, pending, mask=False, echo=False)
             if password is None:
                 return
 
@@ -239,7 +253,7 @@ class TelnetHoneypot:
             prompt = ('%s@%s:~# ' % (username or 'root', self.HOSTNAME)).encode()
             while self.running:
                 sock.sendall(prompt)
-                line = self._readline(sock)
+                line = self._readline(sock, pending)
                 if line is None:
                     break
                 line = line.strip()
@@ -356,6 +370,22 @@ class TelnetHoneypot:
             return '%s: permission denied' % first
 
         if first in ('chmod', 'chown'):
+            return ''
+
+        # Persistence: dropping an SSH key or a cron entry to survive a reboot
+        # or password change. Bots increasingly do this after the wget stage.
+        if 'authorized_keys' in low:
+            self.log_attack('SSH Key Persistence',
+                            "%s | PERSISTENCE (ssh authorized_keys) | '%s'" % (ip, cmd),
+                            severity='crit', ip=ip, session_id=session_id,
+                            mitre='T1098')
+            return ''
+
+        if 'crontab' in low or '/etc/cron' in low:
+            self.log_attack('Cron Persistence',
+                            "%s | PERSISTENCE (scheduled task) | '%s'" % (ip, cmd),
+                            severity='crit', ip=ip, session_id=session_id,
+                            mitre='T1053')
             return ''
 
         if first == 'echo':

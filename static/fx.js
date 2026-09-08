@@ -17,42 +17,46 @@
   }
 
   /* ------------------------------------------------------------------
-   * Matrix rain -- one canvas, redrawn on a trailing alpha fill so the
-   * columns leave a fading tail without storing any history.
+   * Matrix rain -- hacker-mode ambience. One canvas, trailing alpha
+   * fill so columns leave a fading tail without storing history.
+   * If no canvas is passed we create a fixed full-screen one, so the
+   * effect turns on everywhere without touching the templates.
    * ---------------------------------------------------------------- */
   function matrix(canvas) {
-    if (!canvas || REDUCED) return;
+    if (REDUCED) return;
+    if (!canvas) {
+      canvas = document.getElementById('fx-matrix');
+      if (!canvas) {
+        canvas = document.createElement('canvas');
+        canvas.id = 'fx-matrix';
+        document.body.appendChild(canvas);
+      }
+    }
     var ctx = canvas.getContext('2d');
-    var GLYPHS = 'アイウエオカキクケコサシスセソタチツテトナニヌネノ0123456789';
-    var SIZE = 16;
-    var cols, drops, hot, info, bg;
+    var GLYPHS = 'アイウエオカキクケコサシスセソタチツテト0123456789<>[]{}/\\|=+*#$%&@';
+    var SIZE = 15;
+    var cols, drops, hot, dim;
 
     function resize() {
       canvas.width = global.innerWidth;
       canvas.height = global.innerHeight;
       cols = Math.ceil(canvas.width / SIZE);
       drops = new Array(cols);
-      for (var i = 0; i < cols; i++) {
-        drops[i] = Math.random() * -canvas.height;
-      }
-      hot = css('--hot') || '#2fe36b';
-      info = css('--info') || '#1f3d2b';
-      bg = css('--bg') || '#05080a';
+      for (var i = 0; i < cols; i++) drops[i] = Math.random() * -canvas.height;
+      hot = css('--hot') || '#00ff9c';
+      dim = css('--dim') || '#2f8a5c';
       ctx.font = SIZE + 'px monospace';
     }
 
     function frame() {
-      ctx.fillStyle = 'rgba(' + (css('--bg-rgb') || '5, 8, 10') + ', 0.09)';
+      ctx.fillStyle = 'rgba(' + (css('--bg-rgb') || '2, 6, 4') + ', 0.08)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       for (var i = 0; i < cols; i++) {
         var ch = GLYPHS[(Math.random() * GLYPHS.length) | 0];
         var y = drops[i];
-        // Lead glyph burns bright, the tail decays into the panel line.
-        ctx.fillStyle = Math.random() > 0.94 ? hot : info;
+        ctx.fillStyle = Math.random() > 0.93 ? hot : dim;   // lead glyph burns bright
         ctx.fillText(ch, i * SIZE, y);
-        drops[i] = y > canvas.height && Math.random() > 0.975
-          ? 0
-          : y + SIZE;
+        drops[i] = (y > canvas.height && Math.random() > 0.975) ? 0 : y + SIZE;
       }
       requestAnimationFrame(frame);
     }
@@ -62,65 +66,17 @@
     requestAnimationFrame(frame);
   }
 
-  /* ------------------------------------------------------------------
-   * Boot sequence -- types a fake system log, then dissolves.
-   * Runs once per browser session, not on every refresh.
-   * ---------------------------------------------------------------- */
+  /* boot() -- retired fake boot log; kept as a no-op for old callers. */
   function boot(el, lines, done) {
-    if (!el) { if (done) done(); return; }
+    if (el) { try { el.remove(); } catch (e) {} }
+    if (done) done();
+  }
 
-    var KEY = 'fx.booted';
-    var seen = false;
-    try { seen = sessionStorage.getItem(KEY) === '1'; } catch (e) {}
-
-    if (seen || REDUCED) {
-      el.remove();
-      if (done) done();
-      return;
-    }
-    try { sessionStorage.setItem(KEY, '1'); } catch (e) {}
-
-    var i = 0;
-    var body = document.createElement('div');
-    el.appendChild(body);
-
-    function nextLine() {
-      if (i >= lines.length) {
-        setTimeout(function () {
-          el.classList.add('done');
-          setTimeout(function () { el.remove(); if (done) done(); }, 520);
-        }, 340);
-        return;
-      }
-      var spec = lines[i++];
-      var row = document.createElement('div');
-      row.className = spec.cls || 'nb';
-      body.appendChild(row);
-      type(row, spec.text, spec.speed || 9, nextLine);
-    }
-
-    function type(row, text, speed, cb) {
-      var n = 0;
-      var cursor = document.createElement('span');
-      cursor.className = 'cursor';
-      row.appendChild(cursor);
-      (function tick() {
-        if (n >= text.length) {
-          cursor.remove();
-          setTimeout(cb, spacing(text));
-          return;
-        }
-        cursor.insertAdjacentText('beforebegin', text[n++]);
-        setTimeout(tick, speed);
-      })();
-    }
-
-    // A beat after section headers makes it read like a real boot.
-    function spacing(text) {
-      return /\[\s*OK\s*\]|\.\.\.$/.test(text) ? 120 : 40;
-    }
-
-    nextLine();
+  /* Auto-start the rain on every page that loads fx.js. */
+  if (document.readyState === 'loading') {
+    global.addEventListener('DOMContentLoaded', function () { matrix(); });
+  } else {
+    matrix();
   }
 
   /* ------------------------------------------------------------------
@@ -226,7 +182,9 @@
    * ---------------------------------------------------------------- */
   var CRIT = ['path traversal', 'malware download', 'credential capture',
     'delete attempt', 'sql injection', 'command injection',
-    'file inclusion', 'xss attempt'];
+    'file inclusion', 'xss attempt', 'log4shell', 'shellshock',
+    'ssrf attempt', 'xxe attempt', 'ssh key persistence',
+    'cron persistence', 'history cleared', 'destructive command'];
   var WARN = ['scanner detected', 'password attempt', 'shell command',
     'file read', 'file access', 'login success', 'auth attempt',
     'password authentication', 'public key auth', 'permission change'];

@@ -17,6 +17,7 @@ ANALYTICS_TEMPLATE = """
 <style>
 .container{max-width:1400px;margin:0 auto;padding:22px}
 .header{text-align:center;padding:26px 12px 18px;position:relative}
+.header .wordmark{font-size:2.2rem}
 .nav{position:absolute;top:20px;left:20px;display:flex;gap:10px}
 .nav a,.logout-btn{
   padding:7px 14px;border:1px solid var(--line);color:var(--muted);
@@ -33,8 +34,8 @@ ANALYTICS_TEMPLATE = """
 .g2{grid-template-columns:repeat(auto-fit,minmax(400px,1fr))}
 
 .card{
-  background:var(--bg-2);border:1px solid var(--line);border-radius:6px;
-  padding:16px 18px;position:relative;overflow:hidden;
+  background:var(--bg-2);border:1px solid var(--line);border-radius:var(--radius);
+  padding:18px 20px;position:relative;overflow:hidden;box-shadow:var(--shadow);
 }
 .card h2{
   font-size:.82em;letter-spacing:.16em;text-transform:uppercase;
@@ -87,8 +88,9 @@ tbody tr:hover{background:var(--bg-3)}
 }
 .modal.open{display:flex;animation:fx-rise .25s ease-out}
 .modal-box{
-  background:var(--bg-2);border:1px solid var(--hot);border-radius:6px;
-  max-width:900px;width:100%;max-height:86vh;overflow:auto;padding:22px;
+  background:var(--bg-2);border:1px solid var(--line);border-radius:var(--radius);
+  max-width:900px;width:100%;max-height:86vh;overflow:auto;padding:24px;
+  box-shadow:var(--shadow);
 }
 .modal-box h3{color:var(--hot);margin-bottom:4px;font-size:1.1em}
 .modal-close{
@@ -130,10 +132,6 @@ tbody tr:hover{background:var(--bg-3)}
 <script src="{{ url_for('static', filename='fx.js') }}" defer></script>
 </head>
 <body>
-<canvas id="fx-matrix"></canvas>
-<div id="fx-scan"></div>
-<div id="fx-vignette"></div>
-
 <div class="container">
   <div class="header">
     <div class="nav"><a href="{{ url_for('index') }}">&larr; CONSOLE</a>
@@ -549,7 +547,6 @@ function refresh(){
   loadSessions(); loadPayloads(); loadMap();
 }
 document.addEventListener('DOMContentLoaded', function(){
-  FX.matrix(document.getElementById('fx-matrix'));
   refresh();
   setInterval(refresh, 10000);
   window.addEventListener('resize', function(){

@@ -35,6 +35,9 @@ from ftp_honeypot import FTPHoneypot
 from ssh_honeypot import SSHHoneypot
 from branding import BRAND, theme_css, console_banner
 from telnet_honeypot import TelnetHoneypot
+from smb_honeypot import SMBHoneypot
+from smtp_honeypot import SMTPHoneypot
+from snmp_honeypot import SNMPHoneypot
 import storage
 import intel
 import alerting
@@ -69,7 +72,10 @@ honeypots = {
     'http': None,
     'ftp': None,
     'ssh': None,
-    'telnet': None
+    'telnet': None,
+    'smb': None,
+    'smtp': None,
+    'snmp': None
 }
 
 # Store logs
@@ -220,252 +226,44 @@ LOGIN_TEMPLATE = """
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <style>{{ theme|safe }}</style>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body{ display:flex; align-items:center; justify-content:center; padding:24px; }
+        .login-container{ padding:42px 34px; max-width:420px; width:100%; }
+        .login-header{ text-align:center; margin-bottom:24px; }
+        .login-header .wordmark{ font-size:2.3rem; }
+        .login-header .brand-tag{ margin-top:.5rem; }
+        .joker-quote{
+            color:var(--muted); font-size:.86rem; font-style:italic;
+            background:var(--bg-3); border:1px solid var(--line-soft);
+            border-left:3px solid var(--accent);
+            border-radius:var(--radius-sm); padding:.75em .9em; margin:0 0 22px;
         }
-        
-        
-        @keyframes grid-move {
-            0% { background-position: 0 0; }
-            100% { background-position: 50px 50px; }
+        .form-group{ margin-bottom:18px; }
+        .form-group label{
+            display:block; color:var(--muted); font-size:.76rem;
+            text-transform:uppercase; letter-spacing:.06em; margin-bottom:7px;
         }
-        
-        @keyframes glow {
-            0%, 100% { text-shadow: 0 0 5px var(--hot); }
-            50% { text-shadow: 0 0 10px var(--hot), 0 0 15px var(--hot); }
+        .btn-login{
+            width:100%; padding:.85em; margin-top:4px; cursor:pointer;
+            border:1px solid var(--hot); border-radius:var(--radius-sm);
+            font-family:var(--mono); font-size:.9rem; font-weight:700;
+            letter-spacing:.1em; text-transform:uppercase; color:var(--hot);
+            background:rgba(var(--hot-rgb),.08);
+            transition:all .15s ease;
         }
-        
-        @keyframes fade-in {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
+        .btn-login:hover{ background:var(--hot); color:#00160d; box-shadow:0 0 20px rgba(var(--hot-rgb),.55); }
+        .btn-login:focus-visible{ outline:none; box-shadow:var(--ring); }
+        .error-message{
+            background:rgba(var(--alert-rgb),.10); border:1px solid rgba(var(--alert-rgb),.5);
+            color:var(--alert); padding:.7em .9em; border-radius:var(--radius-sm);
+            margin-bottom:18px; text-align:center; font-size:.88rem;
         }
-        
-        @keyframes blink {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0; }
-        }
-        
-        body {
-            background: var(--bg);
-            font-family: 'Courier New', monospace;
-            color: var(--hot);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        body::before {
-            content: '';
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-image: 
-                linear-gradient(rgba(var(--hot-rgb), 0.04) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(var(--hot-rgb), 0.04) 1px, transparent 1px);
-            background-size: 50px 50px;
-            pointer-events: none;
-            animation: grid-move 20s linear infinite;
-            z-index: 1;
-        }
-        
-        
-        
-        .login-container {
-            position: relative;
-            z-index: 10;
-            background: var(--bg-2);
-            border: 1px solid var(--hot);
-            padding: 50px 40px;
-            border-radius: 4px;
-            max-width: 450px;
-            width: 90%;
-            box-shadow: 0 0 30px rgba(var(--hot-rgb), 0.20);
-            animation: fade-in 0.8s ease-out;
-        }
-        
-        .login-container::before,
-        .login-container::after {
-            content: '';
-            position: absolute;
-            width: 30px;
-            height: 30px;
-            border: 2px solid var(--hot);
-        }
-        
-        .login-container::before {
-            top: 15px;
-            left: 15px;
-            border-right: none;
-            border-bottom: none;
-        }
-        
-        .login-container::after {
-            top: 15px;
-            right: 15px;
-            border-left: none;
-            border-bottom: none;
-        }
-        
-        .login-header {
-            text-align: center;
-            margin-bottom: 40px;
-        }
-        
-        .login-header h1 {
-            font-size: 2.5em;
-            color: var(--hot);
-            letter-spacing: 8px;
-            margin-bottom: 10px;
-            animation: glow 3s ease-in-out infinite;
-        }
-        
-        .login-header h1::before {
-            content: '> ';
-            opacity: 0.6;
-        }
-        
-        .login-header h1::after {
-            content: '_';
-            animation: blink 1s step-end infinite;
-            margin-left: 5px;
-        }
-        
-        .login-header .subtitle {
-            color: var(--hot-soft);
-            font-size: 0.9em;
-            font-style: italic;
-            opacity: 0.8;
-        }
-        
-        .joker-quote {
-            transition: opacity .26s ease;
-            text-align: center;
-            color: var(--muted);
-            font-size: 0.85em;
-            margin-bottom: 30px;
-            font-style: italic;
-            padding: 10px;
-            background: var(--bg);
-            border-left: 3px solid var(--hot);
-        }
-        
-        .form-group {
-            margin-bottom: 25px;
-        }
-        
-        .form-group label {
-            display: block;
-            color: var(--muted);
-            font-size: 0.9em;
-            margin-bottom: 8px;
-            text-transform: uppercase;
-        }
-        
-        .form-group label::before {
-            content: '>> ';
-            color: var(--hot);
-        }
-        
-        .form-group input {
-            width: 100%;
-            padding: 12px 15px;
-            background: var(--bg);
-            border: 1px solid var(--line-soft);
-            color: var(--hot);
-            border-radius: 4px;
-            font-family: 'Courier New', monospace;
-            font-size: 1em;
-            transition: all 0.3s;
-        }
-        
-        .form-group input:focus {
-            outline: none;
-            border-color: var(--hot);
-            box-shadow: 0 0 10px rgba(var(--hot-rgb), 0.20);
-        }
-        
-        .btn-login {
-            width: 100%;
-            padding: 15px;
-            background: transparent;
-            border: 1px solid var(--hot);
-            color: var(--hot);
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 1em;
-            font-weight: bold;
-            text-transform: uppercase;
-            font-family: 'Courier New', monospace;
-            transition: all 0.3s;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .btn-login::before {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 0;
-            height: 0;
-            border-radius: 50%;
-            background: rgba(var(--hot-rgb), 0.20);
-            transition: width 0.5s, height 0.5s, top 0.5s, left 0.5s;
-            transform: translate(-50%, -50%);
-        }
-        
-        .btn-login:hover::before {
-            width: 500px;
-            height: 500px;
-        }
-        
-        .btn-login:hover {
-            background: var(--hot);
-            color: var(--bg);
-            box-shadow: 0 0 20px rgba(var(--hot-rgb), 0.45);
-        }
-        
-        .error-message {
-            background: rgba(var(--alert-rgb), 0.10);
-            border: 1px solid var(--alert);
-            color: var(--alert);
-            padding: 12px;
-            border-radius: 4px;
-            margin-bottom: 20px;
-            text-align: center;
-            animation: fade-in 0.3s ease-out;
-        }
-        
-        .error-message::before {
-            content: '⚠ ';
-        }
-        
-        ::-webkit-scrollbar {
-            width: 10px;
-        }
-        
-        ::-webkit-scrollbar-track {
-            background: var(--bg);
-        }
-        
-        ::-webkit-scrollbar-thumb {
-            background: var(--hot);
-            border-radius: 5px;
-        }
+        .error-message::before{ content:'\26A0'; margin-right:.4em; }
+    
     </style>
     <script src="{{ url_for('static', filename='fx.js') }}" defer></script>
 </head>
 <body>
-    <canvas id="fx-matrix"></canvas>
-    <div id="fx-scan"></div>
-    <div id="fx-vignette"></div>
     
     <div class="login-container">
         <div class="login-header">
@@ -496,11 +294,6 @@ LOGIN_TEMPLATE = """
         </form>
     </div>
     
-    <script>
-document.addEventListener('DOMContentLoaded', function () {
-            FX.matrix(document.getElementById('fx-matrix'));
-        });
-    </script>
 </body>
 </html>
 """
@@ -515,840 +308,133 @@ HTML_TEMPLATE = """
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <style>{{ theme|safe }}</style>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        
-        @keyframes grid-move {
-            0% { background-position: 0 0; }
-            100% { background-position: 50px 50px; }
-        }
-        
-        @keyframes glow {
-            0%, 100% { text-shadow: 0 0 5px var(--hot); }
-            50% { text-shadow: 0 0 10px var(--hot), 0 0 15px var(--hot); }
-        }
-        
-        @keyframes typing {
-            from { width: 0; }
-            to { width: 100%; }
-        }
-        
-        @keyframes blink {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0; }
-        }
-        
-        @keyframes slide-in {
-            from { transform: translateX(-20px); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-        }
-        
-        @keyframes fade-in {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-        
-        body {
-            background: var(--bg);
-            font-family: 'Courier New', monospace;
-            color: var(--hot);
-            min-height: 100vh;
-            padding: 20px 20px 60px 20px;
-            line-height: 1.6;
-            position: relative;
-            overflow-x: hidden;
-        }
-        
-        body::before {
-            content: '';
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-image: 
-                linear-gradient(rgba(var(--hot-rgb), 0.04) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(var(--hot-rgb), 0.04) 1px, transparent 1px);
-            background-size: 50px 50px;
-            pointer-events: none;
-            animation: grid-move 20s linear infinite;
-            z-index: 1;
-        }
-        
-        
-        
-        .container {
-            max-width: 1600px;
-            margin: 0 auto;
-            position: relative;
-            z-index: 10;
-        }
-        
-        .header {
-            text-align: center;
-            padding: 30px;
-            background: var(--bg-2);
-            border: 1px solid var(--hot);
-            margin-bottom: 20px;
-            border-radius: 4px;
-            position: relative;
-            box-shadow: 0 0 20px rgba(var(--hot-rgb), 0.10);
-            animation: fade-in 0.8s ease-out;
-        }
-        
-        .header::before,
-        .header::after {
-            content: '';
-            position: absolute;
-            width: 20px;
-            height: 20px;
-            border: 2px solid var(--hot);
-        }
-        
-        .header::before {
-            top: 10px;
-            left: 10px;
-            border-right: none;
-            border-bottom: none;
-        }
-        
-        .header::after {
-            top: 10px;
-            right: 10px;
-            border-left: none;
-            border-bottom: none;
-        }
-        
-        .header h1 {
-            font-size: 2.5em;
-            color: var(--hot);
-            letter-spacing: 8px;
-            margin-bottom: 10px;
-            animation: glow 3s ease-in-out infinite;
-            position: relative;
-        }
-        
-        .header h1::before {
-            content: '> ';
-            opacity: 0.6;
-        }
-        
-        .header h1::after {
-            content: '_';
-            animation: blink 1s step-end infinite;
-            margin-left: 5px;
-        }
-        
-        .header .tagline {
-            color: var(--hot-soft);
-            font-size: 1em;
-            font-style: italic;
-            opacity: 0.8;
-        }
-        
-        .header .tagline::before,
-        .header .tagline::after {
-            content: '';
-            position: absolute;
-            width: 20px;
-            height: 20px;
-            border: 2px solid var(--hot);
-        }
-        
-        .header .tagline::before {
-            bottom: 10px;
-            left: 10px;
-            border-right: none;
-            border-top: none;
-        }
-        
-        .header .tagline::after {
-            bottom: 10px;
-            right: 10px;
-            border-left: none;
-            border-top: none;
-        }
-        
-        .logout-btn {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            padding: 8px 16px;
-            background: transparent;
-            border: 1px solid var(--alert);
-            color: var(--alert);
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.85em;
-            font-family: 'Courier New', monospace;
-            text-decoration: none;
-            transition: all 0.3s;
-            z-index: 100;
-        }
-        
-        .logout-btn:hover {
-            background: var(--alert);
-            color: var(--bg);
-            box-shadow: 0 0 15px rgba(var(--alert-rgb), 0.45);
-        }
-        
-        .joker-quote {
-            text-align: center;
-            color: var(--muted);
-            font-size: 0.95em;
-            margin-bottom: 20px;
-            font-style: italic;
-            padding: 10px;
-            background: var(--bg-2);
-            border-left: 3px solid var(--hot);
-            animation: slide-in 0.6s ease-out;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .joker-quote::before {
-            content: '';
-            position: absolute;
-            left: -100%;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(var(--hot-rgb), 0.10), transparent);
-            animation: shimmer 3s infinite;
-        }
-        
-        @keyframes shimmer {
-            0% { left: -100%; }
-            100% { left: 100%; }
-        }
-        
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 25px;
-        }
-        
-        .stat-card {
-            background: var(--bg-2);
-            border: 1px solid var(--hot);
-            padding: 20px;
-            text-align: center;
-            border-radius: 4px;
-            position: relative;
-            transition: all 0.3s ease;
-            animation: fade-in 0.5s ease-out backwards;
-        }
-        
-        .stat-card:nth-child(1) { animation-delay: 0.1s; }
-        .stat-card:nth-child(2) { animation-delay: 0.2s; }
-        .stat-card:nth-child(3) { animation-delay: 0.3s; }
-        .stat-card:nth-child(4) { animation-delay: 0.4s; }
-        
-        .stat-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 2px;
-            background: linear-gradient(90deg, transparent, var(--hot), transparent);
-            opacity: 0;
-            transition: opacity 0.3s;
-        }
-        
-        .stat-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 5px 20px rgba(var(--hot-rgb), 0.20);
-        }
-        
-        .stat-card:hover::before {
-            opacity: 1;
-        }
-        
-        .stat-number {
-            font-size: 2.5em;
-            color: var(--hot);
-            font-weight: bold;
-            text-shadow: 0 0 10px rgba(var(--hot-rgb), 0.45);
-        }
-        
-        .stat-label {
-            color: var(--muted);
-            font-size: 0.9em;
-            margin-top: 8px;
-            text-transform: uppercase;
-        }
-        
-        .controls {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
-            gap: 20px;
-            margin-bottom: 25px;
-        }
-        
-        .control-card {
-            background: var(--bg-2);
-            border: 1px solid var(--hot);
-            padding: 25px;
-            border-radius: 4px;
-            position: relative;
-            transition: all 0.3s ease;
-            animation: slide-in 0.6s ease-out backwards;
-            overflow: hidden;
-        }
-        
-        .control-card:nth-child(1) { animation-delay: 0.2s; }
-        .control-card:nth-child(2) { animation-delay: 0.3s; }
-        .control-card:nth-child(3) { animation-delay: 0.4s; }
-        
-        .control-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 3px;
-            height: 0;
-            background: var(--hot);
-            transition: height 0.3s ease;
-            z-index: 1;
-        }
-        
-        .control-card::after {
-            content: '01001010';
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            font-size: 0.7em;
-            color: rgba(var(--hot-rgb), 0.10);
-            letter-spacing: 2px;
-            pointer-events: none;
-        }
-        
-        .control-card:hover {
-            border-color: var(--hot);
-            box-shadow: 0 0 20px rgba(var(--hot-rgb), 0.15);
-        }
-        
-        .control-card:hover::before {
-            height: 100%;
-        }
-        
-        .control-card:hover::after {
-            color: rgba(var(--hot-rgb), 0.20);
-        }
-        
-        .control-card h2 {
-            color: var(--hot);
-            font-size: 1.5em;
-            margin-bottom: 15px;
-            text-transform: uppercase;
-            border-bottom: 1px solid var(--line-soft);
-            padding-bottom: 10px;
-            position: relative;
-        }
-        
-        .control-card h2::before {
-            content: '>> ';
-            color: var(--hot);
-            opacity: 0.6;
-        }
-        
-        .status {
-            display: flex;
-            align-items: center;
-            margin-bottom: 15px;
-            font-size: 1em;
-            padding: 10px;
-            background: var(--bg);
-            border-radius: 4px;
-        }
-        
-        .status-dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            margin-right: 10px;
-            position: relative;
-        }
-        
-        .status-dot::before {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            animation: pulse-ring 2s ease-out infinite;
-        }
-        
-        @keyframes pulse-ring {
-            0% {
-                width: 100%;
-                height: 100%;
-                opacity: 0.8;
-            }
-            100% {
-                width: 200%;
-                height: 200%;
-                opacity: 0;
-            }
-        }
-        
-        .status-dot.active {
-            background: var(--hot);
-            box-shadow: 0 0 10px var(--hot);
-            animation: pulse 2s ease-in-out infinite;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.6; }
-        }
-        
-        .status-dot.active::before {
-            box-shadow: 0 0 10px var(--hot);
-        }
-        
-        .status-dot.inactive {
-            background: var(--alert);
-            box-shadow: 0 0 8px var(--alert);
-        }
-        
-        .status-dot.inactive::before {
-            box-shadow: 0 0 8px var(--alert);
-        }
-        
-        .btn {
-            padding: 10px 20px;
-            border: 1px solid var(--hot);
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.95em;
-            font-weight: bold;
-            margin: 5px;
-            transition: all 0.3s;
-            text-transform: uppercase;
-            background: transparent;
-            font-family: 'Courier New', monospace;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .btn::before {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 0;
-            height: 0;
-            border-radius: 50%;
-            background: rgba(var(--hot-rgb), 0.20);
-            transition: width 0.5s, height 0.5s, top 0.5s, left 0.5s;
-            transform: translate(-50%, -50%);
-        }
-        
-        .btn:hover::before {
-            width: 300px;
-            height: 300px;
-        }
-        
-        .btn-start {
-            color: var(--hot);
-            border-color: var(--hot);
-        }
-        
-        .btn-start:hover {
-            background: var(--hot);
-            color: var(--bg);
-            box-shadow: 0 0 15px rgba(var(--hot-rgb), 0.45);
-        }
-        
-        .btn-stop {
-            color: var(--alert);
-            border-color: var(--alert);
-        }
-        
-        .btn-stop:hover {
-            background: var(--alert);
-            color: var(--bg);
-            box-shadow: 0 0 15px rgba(var(--alert-rgb), 0.45);
-        }
-        
-        .config {
-            margin-top: 15px;
-        }
-        
-        .config-label {
-            color: var(--muted);
-            font-size: 0.9em;
-            margin-top: 12px;
-            margin-bottom: 5px;
-            display: block;
-        }
-        
-        .config input, .config select, .config textarea {
-            width: 100%;
-            padding: 8px;
-            margin: 5px 0;
-            background: var(--bg);
-            border: 1px solid var(--line-soft);
-            color: var(--hot);
-            border-radius: 4px;
-            font-family: 'Courier New', monospace;
-            font-size: 0.9em;
-        }
-        
-        .config input:focus, .config select:focus, .config textarea:focus {
-            outline: none;
-            border-color: var(--hot);
-        }
-        
-        .config textarea {
-            min-height: 60px;
-            resize: vertical;
-        }
-        
-        .config select option {
-            background: var(--bg);
-            color: var(--hot);
-        }
-        
-        .banner-hint {
-            color: var(--dim);
-            font-size: 0.85em;
-            margin-top: 5px;
-        }
-        
-        .http-advanced, .ftp-advanced, .ssh-advanced {
-            background: var(--bg);
-            padding: 15px;
-            border-radius: 4px;
-            margin-top: 15px;
-            border: 1px solid var(--line-soft);
-        }
-        
-        .file-list {
-            max-height: 100px;
-            overflow-y: auto;
-            margin-top: 10px;
-            padding: 8px;
-            background: var(--bg);
-            border-radius: 4px;
-            border: 1px solid var(--line-soft);
-        }
-        
-        .file-item {
-            padding: 6px;
-            margin: 4px 0;
-            background: var(--bg-2);
-            border-radius: 3px;
-            font-size: 0.85em;
-            border-left: 2px solid var(--hot);
-        }
-        
-        .logs-section {
-            background: var(--bg-2);
-            border: 1px solid var(--hot);
-            padding: 25px;
-            border-radius: 4px;
-            position: relative;
-            animation: fade-in 0.8s ease-out 0.5s backwards;
-        }
-        
-        .logs-section::before,
-        .logs-section::after {
-            content: '';
-            position: absolute;
-            width: 30px;
-            height: 30px;
-            border: 2px solid var(--hot);
-        }
-        
-        .logs-section::before {
-            top: 15px;
-            left: 15px;
-            border-right: none;
-            border-bottom: none;
-        }
-        
-        .logs-section::after {
-            top: 15px;
-            right: 15px;
-            border-left: none;
-            border-bottom: none;
-        }
-        
-        .logs-section h2 {
-            color: var(--hot);
-            font-size: 1.5em;
-            margin-bottom: 20px;
-            text-align: center;
-            text-transform: uppercase;
-            border-bottom: 1px solid var(--line-soft);
-            padding-bottom: 10px;
-            animation: glow 3s ease-in-out infinite;
-            position: relative;
-        }
-        
-        .logs-section h2::before {
-            content: '[';
-            margin-right: 10px;
-        }
-        
-        .logs-section h2::after {
-            content: ']';
-            margin-left: 10px;
-        }
-        
-        .logs-section h2 .live-indicator {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            background: var(--alert);
-            border-radius: 50%;
-            margin-left: 15px;
-            animation: live-blink 1s ease-in-out infinite;
-            box-shadow: 0 0 10px var(--alert);
-        }
-        
-        @keyframes live-blink {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
-        }
-        
-        .logs-container {
-            max-height: 500px;
-            overflow-y: auto;
-            background: var(--bg);
-            padding: 15px;
-            border-radius: 4px;
-            border: 1px solid var(--line-soft);
-            position: relative;
-        }
-        
-        .logs-container::before,
-        .logs-container::after {
-            content: '';
-            position: absolute;
-            width: 20px;
-            height: 20px;
-            border: 2px solid var(--hot);
-            opacity: 0.3;
-        }
-        
-        .logs-container::before {
-            bottom: 15px;
-            left: 15px;
-            border-right: none;
-            border-top: none;
-        }
-        
-        .logs-container::after {
-            bottom: 15px;
-            right: 30px;
-            border-left: none;
-            border-top: none;
-        }
-        
-        .log-entry {
-            padding: 10px;
-            margin: 8px 0;
-            border-left: 3px solid;
-            background: var(--bg-2);
-            border-radius: 3px;
-            font-size: 0.9em;
-            animation: log-stream 0.5s ease-out;
-            transition: all 0.2s ease;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        @keyframes log-stream {
-            0% {
-                max-height: 0;
-                opacity: 0;
-                transform: translateY(-10px);
-                margin: 0;
-                padding: 0 10px;
-            }
-            50% {
-                opacity: 0.5;
-            }
-            100% {
-                max-height: 100px;
-                opacity: 1;
-                transform: translateY(0);
-                margin: 8px 0;
-                padding: 10px;
-            }
-        }
-        
-        .log-entry::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 0;
-            height: 100%;
-            width: 3px;
-            background: currentColor;
-            animation: log-flash 0.5s ease-out;
-        }
-        
-        @keyframes log-flash {
-            0%, 50% {
-                box-shadow: 0 0 10px currentColor, 0 0 20px currentColor;
-            }
-            100% {
-                box-shadow: none;
-            }
-        }
-        
-        .log-entry:hover {
-            background: rgba(var(--hot-rgb), 0.05);
-            transform: translateX(5px);
-            box-shadow: -3px 0 0 var(--hot);
-        }
-        
-        .log-entry.http { border-left-color: var(--hot); }
-        .log-entry.ftp { border-left-color: var(--hot-soft); }
-        .log-entry.ssh { border-left-color: var(--hot-soft); }
-        
-        .log-timestamp {
-            color: var(--dim);
-            font-weight: bold;
-        }
-        
-        .log-protocol {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 3px;
-            font-size: 0.85em;
-            font-weight: bold;
-            margin: 0 5px;
-            box-shadow: 0 0 5px currentColor;
-            animation: protocol-pulse 0.5s ease-out;
-        }
-        
-        @keyframes protocol-pulse {
-            0% {
-                transform: scale(1.3);
-                box-shadow: 0 0 15px currentColor;
-            }
-            100% {
-                transform: scale(1);
-                box-shadow: 0 0 5px currentColor;
-            }
-        }
-        
-        .log-protocol.http { background: var(--line); color: var(--hot); }
-        .log-protocol.ftp { background: var(--line); color: var(--hot-soft); }
-        .log-protocol.ssh { background: var(--line); color: var(--hot-soft); }
-        
-        .log-entry.new-entry {
-            animation: log-stream 0.5s ease-out, highlight-new 3s ease-out;
-        }
-        
-        @keyframes highlight-new {
-            0% {
-                background: rgba(var(--hot-rgb), 0.20);
-            }
-            100% {
-                background: var(--bg-2);
-            }
-        }
-        
-        ::-webkit-scrollbar {
-            width: 10px;
-        }
-        
-        ::-webkit-scrollbar-track {
-            background: var(--bg);
-        }
-        
-        ::-webkit-scrollbar-thumb {
-            background: var(--hot);
-            border-radius: 5px;
-        }
-        
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--hot-soft);
-        }
-        
-        input[type="file"]::file-selector-button {
-            background: transparent;
-            color: var(--hot);
-            border: 1px solid var(--hot);
-            padding: 8px 15px;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-right: 10px;
-            font-family: 'Courier New', monospace;
-        }
-        
-        input[type="file"]::file-selector-button:hover {
-            background: var(--hot);
-            color: var(--bg);
-        }
-        
-        .system-bar {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: var(--bg-2);
-            border-top: 1px solid var(--hot);
-            padding: 8px 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 0.85em;
-            z-index: 1000;
-            box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.5);
-        }
-        
-        .system-bar-item {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            color: var(--hot);
-        }
-        
-        .system-bar-item .indicator {
-            width: 6px;
-            height: 6px;
-            background: var(--hot);
-            border-radius: 50%;
-            animation: pulse 2s ease-in-out infinite;
-        }
-        
-        .system-bar-time {
-            color: var(--muted);
-            font-family: 'Courier New', monospace;
-        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body{ padding:0 0 64px; }
+        .container{ max-width:1400px; margin:0 auto; padding:22px 22px 0; }
+
+        /* top app bar */
+        .header{
+            display:flex; align-items:center; justify-content:space-between;
+            gap:16px; padding:16px 20px; margin-bottom:18px;
+            border:1px solid var(--line); border-radius:var(--radius);
+            background:linear-gradient(180deg, var(--bg-2), var(--bg));
+            box-shadow:var(--shadow);
+        }
+        .header .brand{ display:flex; flex-direction:column; }
+        .header h1.wordmark{ font-size:1.7rem; }
+        .header .brand-tag{ margin-top:.3rem; }
+        .header .nav{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+        .logout-btn{
+            display:inline-block; padding:.55em 1em; border-radius:var(--radius-sm);
+            border:1px solid var(--line); color:var(--muted); background:var(--bg-3);
+            font-size:.82rem; font-weight:600; text-decoration:none;
+            transition:border-color .15s ease,color .15s ease,background .15s ease;
+        }
+        .logout-btn:hover{ border-color:var(--hot); color:var(--hot); }
+        .logout-btn.danger:hover{ border-color:var(--alert); color:var(--alert); background:rgba(var(--alert-rgb),.08); }
+
+        .joker-quote{
+            color:var(--muted); font-size:.9rem; font-style:italic;
+            background:var(--bg-2); border:1px solid var(--line-soft);
+            border-left:3px solid var(--accent); border-radius:var(--radius-sm);
+            padding:.7em 1em; margin-bottom:20px;
+        }
+
+        .stats{
+            display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+            gap:14px; margin-bottom:20px;
+        }
+        .stat-card{ padding:18px 18px 14px; }
+        .stat-card .stat-number{
+            font-size:2rem; font-weight:700; color:var(--hot);
+            text-shadow:0 0 14px rgba(var(--hot-rgb),.5);
+        }
+        .stat-card .stat-label{
+            color:var(--muted); font-size:.73rem; text-transform:uppercase;
+            letter-spacing:.06em; margin-top:6px;
+        }
+
+        .controls{
+            display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr));
+            gap:16px; margin-bottom:20px;
+        }
+        .control-card{ padding:22px; }
+        .control-card h2, .logs-section h2{
+            font-size:1rem; font-weight:700; color:var(--hot); letter-spacing:.04em;
+            text-transform:uppercase; text-shadow:0 0 10px rgba(var(--hot-rgb),.4);
+            margin-bottom:16px; padding-bottom:12px; border-bottom:1px solid var(--line-soft);
+            display:flex; align-items:center; gap:.5em;
+        }
+        .control-card h2::before, .logs-section h2::before{
+            content:'>'; color:var(--dim); font-weight:400; text-shadow:none;
+        }
+        .status{
+            display:flex; align-items:center; gap:10px; margin-bottom:14px;
+            padding:.6em .8em; background:var(--bg-3); border:1px solid var(--line-soft);
+            border-radius:var(--radius-sm); font-size:.88rem; color:var(--muted);
+        }
+        .status-dot{ width:9px; height:9px; border-radius:50%; flex:0 0 auto; }
+        .status-dot.active{ background:var(--ok); box-shadow:0 0 0 4px rgba(var(--ok-rgb),.18); }
+        .status-dot.inactive{ background:var(--dim); }
+
+        .btn{ margin:4px 6px 4px 0; }
+        .config{ margin-top:14px; }
+        .config-label{
+            display:block; color:var(--muted); font-size:.76rem; text-transform:uppercase;
+            letter-spacing:.05em; margin:12px 0 5px;
+        }
+        .config input, .config select, .config textarea{ margin:3px 0; }
+        .config textarea{ min-height:60px; resize:vertical; }
+        .banner-hint{ color:var(--dim); font-size:.8rem; margin-top:6px; }
+        .http-advanced,.ftp-advanced,.ssh-advanced{
+            background:var(--bg-3); padding:14px; border-radius:var(--radius-sm);
+            margin-top:14px; border:1px solid var(--line-soft);
+        }
+        .file-list{
+            max-height:110px; overflow-y:auto; margin-top:10px; padding:8px;
+            background:var(--bg-3); border:1px solid var(--line-soft); border-radius:var(--radius-sm);
+        }
+        .file-item{
+            padding:6px 8px; margin:4px 0; background:var(--bg-2); border-radius:6px;
+            font-size:.84rem; border-left:2px solid var(--hot); font-family:var(--mono);
+        }
+
+        .logs-section{ padding:22px; margin-bottom:8px; }
+        .logs-container{
+            max-height:520px; overflow-y:auto; padding:12px; background:var(--bg);
+            border:1px solid var(--line-soft); border-radius:var(--radius-sm);
+        }
+
+        .system-bar{
+            position:fixed; bottom:0; left:0; right:0; z-index:1000;
+            display:flex; align-items:center; justify-content:space-between;
+            padding:8px 22px; font-size:.8rem; color:var(--muted);
+            background:rgba(18,24,38,.82); backdrop-filter:blur(8px);
+            border-top:1px solid var(--line);
+        }
+        .system-bar-item{ display:flex; align-items:center; gap:8px; }
+        .system-bar-item .indicator{
+            width:7px; height:7px; border-radius:50%; background:var(--ok);
+            box-shadow:0 0 0 3px rgba(var(--ok-rgb),.18);
+        }
+        .system-bar-time{ font-family:var(--mono); color:var(--muted); }
+    
     </style>
     <script src="{{ url_for('static', filename='fx.js') }}" defer></script>
 </head>
 <body>
-    <canvas id="fx-matrix"></canvas>
-    <div id="fx-scan"></div>
-    <div id="fx-vignette"></div>
     
-    <div id="boot"></div>
 
     <div class="container">
         <div class="header">
-            <a href="{{ url_for('analytics_page') }}" class="logout-btn"
-               style="right:110px;border-color:var(--hot);color:var(--hot)">INTEL</a>
-            <a href="{{ url_for('logout') }}" class="logout-btn">LOGOUT</a>
-            <h1 class="wordmark" data-glitch="{{ brand.name }}">{{ brand.name }}</h1>
-            <div class="brand-tag">{{ brand.tagline }} &middot; {{ brand.subtitle }} {{ brand.version }}</div>
+            <div class="brand">
+                <h1 class="wordmark">{{ brand.name }}</h1>
+                <div class="brand-tag">{{ brand.tagline }} &middot; {{ brand.subtitle }} {{ brand.version }}</div>
+            </div>
+            <div class="nav">
+                <a href="{{ url_for('analytics_page') }}" class="logout-btn">INTEL</a>
+                <a href="{{ url_for('logout') }}" class="logout-btn danger">LOGOUT</a>
+            </div>
         </div>
         
         <div class="joker-quote" id="quote">
@@ -1380,6 +466,21 @@ HTML_TEMPLATE = """
                 <div class="stat-number" id="telnet-attacks">0</div>
                 <canvas class="stat-spark" id="spark-telnet" data-color-var="--telnet"></canvas>
                 <div class="stat-label">Telnet Attacks</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="smb-attacks">0</div>
+                <canvas class="stat-spark" id="spark-smb" data-color-var="--smb"></canvas>
+                <div class="stat-label">SMB Attacks</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="smtp-attacks">0</div>
+                <canvas class="stat-spark" id="spark-smtp" data-color-var="--smtp"></canvas>
+                <div class="stat-label">SMTP Attacks</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="snmp-attacks">0</div>
+                <canvas class="stat-spark" id="spark-snmp" data-color-var="--snmp"></canvas>
+                <div class="stat-label">SNMP Attacks</div>
             </div>
         </div>
         
@@ -1524,6 +625,78 @@ HTML_TEMPLATE = """
                     <div class="banner-hint">&gt; Telnet draws the most IoT botnet traffic of any port</div>
                 </div>
             </div>
+
+            <div class="control-card">
+                <h2>SMB Honeypot</h2>
+                <div class="status">
+                    <div class="status-dot inactive" id="smb-status"></div>
+                    <span id="smb-status-text">Inactive</span>
+                </div>
+                <button class="btn btn-start" onclick="startHoneypot('smb')">Start</button>
+                <button class="btn btn-stop" onclick="stopHoneypot('smb')">Stop</button>
+
+                <div class="config">
+                    <label class="config-label">Port Number</label>
+                    <input type="number" id="smb-port" placeholder="Port" value="445">
+
+                    <label class="config-label">Pretend To Be</label>
+                    <select id="smb-banner">
+                        <option value="Windows Server 2008 R2 Standard 7601">Windows Server 2008 R2 (EternalBlue-era)</option>
+                        <option value="Windows 7 Professional 7601">Windows 7 Professional</option>
+                        <option value="Samba 4.11.6-Ubuntu">Samba 4.11.6 (Ubuntu)</option>
+                        <option value="Windows Server 2012 R2">Windows Server 2012 R2</option>
+                    </select>
+                    <div class="banner-hint">&gt; TCP 445 &middot; needs admin for ports &lt;1024 (or use e.g. 1445)</div>
+                </div>
+            </div>
+
+            <div class="control-card">
+                <h2>SMTP Honeypot</h2>
+                <div class="status">
+                    <div class="status-dot inactive" id="smtp-status"></div>
+                    <span id="smtp-status-text">Inactive</span>
+                </div>
+                <button class="btn btn-start" onclick="startHoneypot('smtp')">Start</button>
+                <button class="btn btn-stop" onclick="stopHoneypot('smtp')">Stop</button>
+
+                <div class="config">
+                    <label class="config-label">Port Number</label>
+                    <input type="number" id="smtp-port" placeholder="Port" value="25">
+
+                    <label class="config-label">SMTP Banner</label>
+                    <select id="smtp-banner">
+                        <option value="mail.example.com ESMTP Postfix (Ubuntu)">Postfix (Ubuntu)</option>
+                        <option value="mail.corp.local ESMTP Sendmail 8.15.2">Sendmail 8.15.2</option>
+                        <option value="smtp.example.com ESMTP Exim 4.94">Exim 4.94</option>
+                        <option value="EXCH01.corp.local Microsoft ESMTP MAIL Service">Microsoft Exchange</option>
+                    </select>
+                    <div class="banner-hint">&gt; Captures AUTH LOGIN/PLAIN creds &amp; open-relay probes</div>
+                </div>
+            </div>
+
+            <div class="control-card">
+                <h2>SNMP Honeypot</h2>
+                <div class="status">
+                    <div class="status-dot inactive" id="snmp-status"></div>
+                    <span id="snmp-status-text">Inactive</span>
+                </div>
+                <button class="btn btn-start" onclick="startHoneypot('snmp')">Start</button>
+                <button class="btn btn-stop" onclick="stopHoneypot('snmp')">Stop</button>
+
+                <div class="config">
+                    <label class="config-label">Port Number (UDP)</label>
+                    <input type="number" id="snmp-port" placeholder="Port" value="161">
+
+                    <label class="config-label">Reported sysDescr</label>
+                    <select id="snmp-banner">
+                        <option value="Linux gateway 5.4.0 #1 SMP x86_64">Linux gateway</option>
+                        <option value="Cisco IOS Software, C2960 Software">Cisco IOS (C2960)</option>
+                        <option value="HP ETHERNET MULTI-ENVIRONMENT">HP printer</option>
+                        <option value="RouterOS RB750">MikroTik RouterOS</option>
+                    </select>
+                    <div class="banner-hint">&gt; UDP 161 &middot; logs 'public'/'private' community brute force</div>
+                </div>
+            </div>
         </div>
 
         <div class="control-card" style="margin-bottom:20px; border:1px solid var(--danger, #d43); box-shadow:0 0 18px rgba(210,60,50,.25);">
@@ -1531,7 +704,7 @@ HTML_TEMPLATE = """
                 <span>&#9876;</span> Red Team &mdash; Attack Simulator
             </h2>
             <p style="color: var(--dim, #9aa); font-size:13px; line-height:1.5; margin:6px 0 14px;">
-                Fire simulated SSH / FTP / HTTP / Telnet attacks at your own
+                Fire simulated SSH / FTP / HTTP / Telnet / SMB / SMTP / SNMP attacks at your own
                 <strong>running</strong> sensors to test capture, MITRE
                 classification and alerting. Every event appears in the log
                 below and in Analytics. Only sensors you have started are hit,
@@ -1826,7 +999,12 @@ HTML_TEMPLATE = """
                 }
                 config.banner = banner;
             }
-            
+
+            if (protocol === 'smb' || protocol === 'smtp' || protocol === 'snmp') {
+                const b = document.getElementById(`${protocol}-banner`);
+                if (b) config.banner = b.value;
+            }
+
             const response = await fetch('/start', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -1925,7 +1103,7 @@ HTML_TEMPLATE = """
         }
 
         function initSparks() {
-            ['total', 'http', 'ftp', 'ssh', 'telnet'].forEach(function (k) {
+            ['total', 'http', 'ftp', 'ssh', 'telnet', 'smb', 'smtp', 'snmp'].forEach(function (k) {
                 const c = document.getElementById('spark-' + k);
                 if (!c) return;
                 c.dataset.color = getComputedStyle(document.documentElement)
@@ -1968,6 +1146,9 @@ HTML_TEMPLATE = """
             FX.countTo(document.getElementById('ssh-attacks'), data.stats.ssh);
             FX.countTo(document.getElementById('telnet-attacks'),
                        data.stats.telnet || 0);
+            FX.countTo(document.getElementById('smb-attacks'), data.stats.smb || 0);
+            FX.countTo(document.getElementById('smtp-attacks'), data.stats.smtp || 0);
+            FX.countTo(document.getElementById('snmp-attacks'), data.stats.snmp || 0);
 
             if (sparks.total) {
                 sparks.total.push(data.stats.total);
@@ -1975,6 +1156,9 @@ HTML_TEMPLATE = """
                 sparks.ftp.push(data.stats.ftp);
                 sparks.ssh.push(data.stats.ssh);
                 if (sparks.telnet) sparks.telnet.push(data.stats.telnet || 0);
+                if (sparks.smb) sparks.smb.push(data.stats.smb || 0);
+                if (sparks.smtp) sparks.smtp.push(data.stats.smtp || 0);
+                if (sparks.snmp) sparks.snmp.push(data.stats.snmp || 0);
             }
         }
 
@@ -2001,7 +1185,6 @@ HTML_TEMPLATE = """
         
 /* ---------------- ambience + boot ---------------- */
         document.addEventListener('DOMContentLoaded', function () {
-            FX.matrix(document.getElementById('fx-matrix'));
             initSparks();
 
             // pause-on-hover badge for the log stream
@@ -2022,19 +1205,6 @@ HTML_TEMPLATE = """
                 });
             }
 
-            const boot = [
-                { text: '> ' + BRAND.name.toLowerCase() + ' ' + BRAND.version + ' -- ' + BRAND.tagline, cls: 'ok', speed: 14 },
-                { text: '  power-on self test ................ [ OK ]', cls: 'nb' },
-                { text: '  loading deception modules ......... [ OK ]', cls: 'nb' },
-                { text: '  http  sensor ...................... armed', cls: 'nb' },
-                { text: '  ftp   sensor ...................... armed', cls: 'nb' },
-                { text: '  ssh   sensor ...................... armed', cls: 'nb' },
-                { text: '  telnet sensor ..................... armed', cls: 'nb' },
-                { text: '  capture pipeline .................. [ OK ]', cls: 'nb' },
-                { text: '> operator authenticated', cls: 'al', speed: 16 },
-                { text: '> console ready. ' + BRAND.quotes[0], cls: 'ok', speed: 13 }
-            ];
-            FX.boot(document.getElementById('boot'), boot);
         });
     </script>
 </body>
@@ -2205,7 +1375,37 @@ def start_honeypot():
                 session_hooks=SESSION_HOOKS
             )
             honeypots['telnet'].start()
-        
+
+        elif protocol == 'smb':
+            banner = data.get('banner', SMBHoneypot.BANNER_SUGGESTIONS[0])
+            honeypots['smb'] = SMBHoneypot(
+                port=port,
+                log_callback=log_event,
+                server_banner=banner,
+                session_hooks=SESSION_HOOKS
+            )
+            honeypots['smb'].start()
+
+        elif protocol == 'smtp':
+            banner = data.get('banner', SMTPHoneypot.BANNER_SUGGESTIONS[0])
+            honeypots['smtp'] = SMTPHoneypot(
+                port=port,
+                log_callback=log_event,
+                server_banner=banner,
+                session_hooks=SESSION_HOOKS
+            )
+            honeypots['smtp'].start()
+
+        elif protocol == 'snmp':
+            banner = data.get('banner', SNMPHoneypot.BANNER_SUGGESTIONS[0])
+            honeypots['snmp'] = SNMPHoneypot(
+                port=port,
+                log_callback=log_event,
+                server_banner=banner,
+                session_hooks=SESSION_HOOKS
+            )
+            honeypots['snmp'].start()
+
         return jsonify({'status': 'success', 'message': f'{protocol.upper()} honeypot started on port {port}'})
     except Exception as e:
         # A sensor that failed to bind must not be left in the registry, or
@@ -2245,15 +1445,22 @@ def launch_attack():
     data = request.json or {}
     brute = max(1, int(data.get('brute', 4) or 4))
     requested = data.get('protocols') or None   # None => every running sensor
+    # Optional scenario filter (recon/brute/exploit/malware/shell/persist).
+    scen = data.get('scenarios') or data.get('scenario') or ['all']
+    if isinstance(scen, str):
+        scen = [s.strip() for s in scen.split(',') if s.strip()] or ['all']
 
     funcs = {
         'http': attack_sim.attack_http,
         'ftp': attack_sim.attack_ftp,
         'ssh': attack_sim.attack_ssh,
         'telnet': attack_sim.attack_telnet,
+        'smb': attack_sim.attack_smb,
+        'smtp': attack_sim.attack_smtp,
+        'snmp': attack_sim.attack_snmp,
     }
     targets = []
-    for proto in ('http', 'ftp', 'ssh', 'telnet'):
+    for proto in ('http', 'ftp', 'ssh', 'telnet', 'smb', 'smtp', 'snmp'):
         hp = honeypots.get(proto)
         if hp is not None and getattr(hp, 'running', False):
             if not requested or proto in requested:
@@ -2271,7 +1478,7 @@ def launch_attack():
         stats = attack_sim.Stats()
         for proto, port in targets:
             try:
-                funcs[proto]('127.0.0.1', port, stats, brute)
+                funcs[proto]('127.0.0.1', port, stats, brute, scen)
             except Exception as e:  # noqa: BLE001 -- one sensor must not stop the run
                 log_event(proto, 'Simulation Error', str(e))
         log_event('system', 'Attack Simulation Complete',
@@ -2291,7 +1498,10 @@ def get_status():
         'http': honeypots['http'] is not None and honeypots['http'].running,
         'ftp': honeypots['ftp'] is not None and honeypots['ftp'].running,
         'ssh': honeypots['ssh'] is not None and honeypots['ssh'].running,
-        'telnet': honeypots['telnet'] is not None and honeypots['telnet'].running
+        'telnet': honeypots['telnet'] is not None and honeypots['telnet'].running,
+        'smb': honeypots['smb'] is not None and honeypots['smb'].running,
+        'smtp': honeypots['smtp'] is not None and honeypots['smtp'].running,
+        'snmp': honeypots['snmp'] is not None and honeypots['snmp'].running
     }
     return jsonify({'status': status})
 
@@ -2303,7 +1513,10 @@ def get_logs():
         'http': len([l for l in logs if l['protocol'] == 'http']),
         'ftp': len([l for l in logs if l['protocol'] == 'ftp']),
         'ssh': len([l for l in logs if l['protocol'] == 'ssh']),
-        'telnet': len([l for l in logs if l['protocol'] == 'telnet'])
+        'telnet': len([l for l in logs if l['protocol'] == 'telnet']),
+        'smb': len([l for l in logs if l['protocol'] == 'smb']),
+        'smtp': len([l for l in logs if l['protocol'] == 'smtp']),
+        'snmp': len([l for l in logs if l['protocol'] == 'snmp'])
     }
     return jsonify({'logs': logs[:100], 'stats': stats})
 
@@ -2460,46 +1673,72 @@ def api_export(table):
 
 
 if __name__ == '__main__':
+    from branding import cc, cli_glyphs
+
+    ON, OFF, AR, HR = cli_glyphs()
+    RULE = cc('92', '  ' + HR * 58)
+
     print()
-    print(console_banner())
+    print(cc('92;1', console_banner()))
     print()
-    
+
+    # ---- operator credential setup ----------------------------------
     # Credentials come from the environment when set, so the console can
     # start unattended (scripts, containers, CI). getpass reads the Windows
     # console directly and ignores redirected stdin, so without this the
     # app can only ever be launched by hand from a real terminal.
+    print('  ' + cc('96;1', AR + ' SECURE CONSOLE ACCESS'))
+    print(RULE)
+
     AUTH_USERNAME = os.environ.get('HONEYPOT_USER')
     AUTH_PASSWORD = os.environ.get('HONEYPOT_PASS')
 
     if AUTH_USERNAME and AUTH_PASSWORD:
-        print('Credentials read from HONEYPOT_USER / HONEYPOT_PASS.')
+        print('  ' + cc('92', ON) + '  credentials loaded from '
+              + cc('96', 'HONEYPOT_USER / HONEYPOT_PASS'))
     else:
-        print('Set up authentication credentials:')
+        print(cc('90', '  set the operator id + password that unlock the dashboard'))
+        print()
         try:
-            AUTH_USERNAME = input('Enter username: ').strip()
-            AUTH_PASSWORD = getpass.getpass('Enter password: ').strip()
+            AUTH_USERNAME = input(cc('92;1', '  ' + AR + ' operator id  ')
+                                  + cc('90', ': ')).strip()
+            sys.stdout.write(cc('92;1', '  ' + AR + ' password     ')
+                             + cc('90', ': '))
+            sys.stdout.flush()
+            AUTH_PASSWORD = getpass.getpass('').strip()
         except (EOFError, KeyboardInterrupt):
-            print('\n[!] Aborted. Set HONEYPOT_USER and HONEYPOT_PASS to start unattended.')
+            print(cc('91', '\n  [x] aborted -- set HONEYPOT_USER and '
+                           'HONEYPOT_PASS to start unattended.'))
             sys.exit(1)
 
     if not AUTH_USERNAME or not AUTH_PASSWORD:
-        print('\n[!] Error: Username and password cannot be empty!')
+        print(cc('91', '\n  [x] id and password cannot be empty.'))
         sys.exit(1)
-    
+
+    # ---- status board ------------------------------------------------
+    def _row(is_on, label, value):
+        dot = cc('92', ON) if is_on else cc('90', OFF)
+        return '  %s  %s %s' % (dot, cc('96', label.ljust(9)), value)
+
+    geo, alr, pay = intel.enabled(), alerting.configured(), capture.fetching_enabled()
+
     print()
-    print("=" * 60)
-    print(f"[+] Operator : {AUTH_USERNAME}")
-    print("[+] Console  : http://localhost:5000")
-    print("[+] Database : %s" % DB_FILE)
-    print("[%s] GeoIP    : %s" % ('+' if intel.enabled() else ' ',
-          'enabled' if intel.enabled() else 'off (set GULLAKTRAP_GEOIP=1)'))
-    print("[%s] Alerting : %s" % ('+' if alerting.configured() else ' ',
-          'configured' if alerting.configured() else 'off (set GULLAKTRAP_WEBHOOK)'))
-    print("[%s] Payloads : %s" % ('+' if capture.fetching_enabled() else ' ',
-          'downloading to quarantine/' if capture.fetching_enabled()
-          else 'URL only (set GULLAKTRAP_FETCH_PAYLOADS=1 to download)'))
-    print('  ' + BRAND['quotes'][0])
-    print("=" * 60)
+    print(RULE)
+    print(_row(True, 'OPERATOR', cc('97;1', AUTH_USERNAME)))
+    print(_row(True, 'CONSOLE',  cc('92;1', 'http://localhost:5000')))
+    print(_row(True, 'DATABASE', cc('97', DB_FILE)))
+    print(_row(geo, 'GEOIP', cc('92', 'enabled') if geo
+              else cc('90', 'off (set GULLAKTRAP_GEOIP=1)')))
+    print(_row(alr, 'ALERTING', cc('92', 'configured') if alr
+              else cc('90', 'off (set GULLAKTRAP_WEBHOOK)')))
+    print(_row(pay, 'PAYLOADS', cc('92', 'downloading to quarantine/') if pay
+              else cc('90', 'URL only (set GULLAKTRAP_FETCH_PAYLOADS=1)')))
+    print(_row(True, 'SENSORS', cc('97', 'HTTP  FTP  SSH  TELNET  SMB  SMTP  SNMP')))
+    print(RULE)
+    print(cc('95', '  ' + BRAND['quotes'][0]))
     print()
-    
+    print('  ' + cc('92;1', AR + ' console ready')
+          + cc('90', '  ->  ') + cc('96;1', 'http://localhost:5000'))
+    print()
+
     app.run(host='0.0.0.0', port=5000, debug=False)

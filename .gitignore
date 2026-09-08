@@ -10,3 +10,7 @@ uploads/
 ftp_files/
 ssh_files/
 telnet_files/
+
+# build artifacts
+GullakTrap.zip
+*.zip

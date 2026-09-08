@@ -25,6 +25,29 @@ class HTTPHoneypotHandler(BaseHTTPRequestHandler):
         if self.log_callback:
             self.log_callback('http', attack_type, details)
     
+    # High-signal exploit needles checked across the whole request surface
+    # (path + body + header values). Kept specific so normal traffic never
+    # trips them.
+    EXPLOIT_SIGNATURES = [
+        ('Log4Shell',    ['${jndi:', 'jndi:ldap', 'jndi:rmi', 'jndi:dns',
+                          '${env:', '${lower:', '${::-j}', '${sys:']),
+        ('Shellshock',   ['() {', '(){:', '() {:;};', '(){ :;};']),
+        ('SSRF Attempt', ['169.254.169.254', 'metadata.google', '/latest/meta-data',
+                          'gopher://', 'dict://']),
+        ('XXE Attempt',  ['<!entity', '<!doctype', 'system "file', "system 'file",
+                          'system "http']),
+    ]
+
+    def _scan_exploits(self, surface, headers, client_ip):
+        """Flag header/body-borne exploits (Log4Shell, Shellshock, SSRF, XXE)."""
+        header_blob = ' '.join('%s: %s' % (k, v) for k, v in headers.items())
+        haystack = (str(surface) + ' ' + header_blob).lower()
+        for attack_name, needles in self.EXPLOIT_SIGNATURES:
+            if any(n in haystack for n in needles):
+                self.log_attack(
+                    attack_name,
+                    f"{attack_name} pattern from {client_ip}")
+
     def do_GET(self):
         """Handle GET requests"""
         client_ip = self.client_address[0]
@@ -46,7 +69,13 @@ class HTTPHoneypotHandler(BaseHTTPRequestHandler):
         for attack_name, patterns in attack_patterns:
             if any(pattern in path.lower() for pattern in patterns):
                 self.log_attack(attack_name, f"Detected in {path} from {client_ip}")
-        
+
+        # Modern exploits ride in the HEADERS, not the path -- Log4Shell in a
+        # User-Agent, Shellshock in a CGI header, SSRF against cloud metadata.
+        # These needles are specific enough not to false-positive on normal
+        # headers, so we can scan the whole request surface for them.
+        self._scan_exploits(path, headers, client_ip)
+
         # Check User-Agent for scanning tools
         user_agent = headers.get('User-Agent', '').lower()
         scanning_tools = {
@@ -87,7 +116,10 @@ class HTTPHoneypotHandler(BaseHTTPRequestHandler):
         
         # Log the POST request with data
         self.log_attack('POST Request', f"From {client_ip} - Path: {path} - Data: {post_data[:200]}")
-        
+
+        # Exploits also arrive in the body and headers of a POST.
+        self._scan_exploits(path + ' ' + post_data, dict(self.headers), client_ip)
+
         # Check for credential theft attempts
         if 'username' in post_data.lower() or 'password' in post_data.lower() or 'user' in post_data.lower():
             self.log_attack('Credential Theft', f"Login attempt from {client_ip}: {post_data}")
@@ -118,41 +150,95 @@ class HTTPHoneypotHandler(BaseHTTPRequestHandler):
         self.send_error(405, "Method Not Allowed")
     
     def _default_html(self):
-        """Default HTML if no custom file provided"""
-        return """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Admin Login</title>
-            <style>
-                body { font-family: Arial; background: #f0f0f0; padding: 50px; }
-                .login-box { background: white; padding: 30px; border-radius: 5px; max-width: 400px; margin: auto; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-                h1 { color: #333; }
-                input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 3px; }
-                button { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 3px; cursor: pointer; width: 100%; }
-                button:hover { background: #0056b3; }
-                .info { color: #666; font-size: 12px; margin-top: 20px; }
-            </style>
-        </head>
-        <body>
-            <div class="login-box">
-                <h1>🔐 Admin Panel</h1>
-                <form action="/login" method="post">
-                    <input type="text" name="username" placeholder="Username" required>
-                    <input type="password" name="password" placeholder="Password" required>
-                    <button type="submit">Login</button>
-                </form>
-                <div class="info">
-                    <p><strong>Server Info:</strong></p>
-                    <p>OS: Ubuntu 20.04 LTS</p>
-                    <p>Web Server: Apache/2.4.41</p>
-                    <p>Database: MySQL 8.0.23</p>
-                    <p>PHP Version: 7.4.3</p>
-                </div>
-            </div>
-        </body>
-        </html>
+        """Default decoy page.
+
+        A convincing management-console login for a fictional network
+        appliance -- the kind of target internet scanners expect to find on
+        an exposed IP. It looks like real kit (no honeypot tells, no exposed
+        stack details), and the sign-in form posts back to /login so any
+        credentials an attacker submits are captured. Self-contained: no
+        external assets, so it renders even for an offline scanner.
         """
+        return """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NexGuard OS &middot; Sign in</title>
+<style>
+  :root{--bd:#d7dde5;--ink:#1f2733;--muted:#6b7688;--brand:#1466d8;--brand2:#0e4fa8;--bg:#eef1f5}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       color:var(--ink);background:var(--bg);
+       background-image:linear-gradient(180deg,#f6f8fb,#e7ecf3);min-height:100vh;
+       display:flex;flex-direction:column}
+  .topbar{background:#0d1b2a;color:#cfe0f5;font-size:12.5px;padding:7px 18px;
+          display:flex;justify-content:space-between;align-items:center;letter-spacing:.2px}
+  .topbar .env{color:#8fb4e8}
+  .wrap{flex:1;display:flex;align-items:center;justify-content:center;padding:36px 16px}
+  .card{background:#fff;border:1px solid var(--bd);border-radius:10px;width:100%;max-width:412px;
+        box-shadow:0 10px 34px rgba(20,40,80,.12);overflow:hidden}
+  .card .head{padding:26px 30px 8px}
+  .brand{display:flex;align-items:center;gap:11px}
+  .brand svg{flex:0 0 auto}
+  .brand .name{font-size:19px;font-weight:700;letter-spacing:.2px}
+  .brand .name span{color:var(--brand)}
+  .sub{color:var(--muted);font-size:13px;margin:14px 0 2px}
+  form{padding:6px 30px 24px}
+  label{display:block;font-size:12.5px;color:#495468;margin:14px 0 6px;font-weight:600}
+  input[type=text],input[type=password]{width:100%;padding:11px 12px;border:1px solid var(--bd);
+        border-radius:7px;font-size:14px;background:#fbfcfe;transition:border-color .15s,box-shadow .15s}
+  input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px rgba(20,102,216,.16)}
+  .row{display:flex;align-items:center;justify-content:space-between;margin-top:14px;font-size:12.5px}
+  .row label{margin:0;font-weight:500;color:#5a6577;display:flex;gap:7px;align-items:center}
+  .row a{color:var(--brand);text-decoration:none}
+  button{margin-top:18px;width:100%;padding:11px;border:0;border-radius:7px;cursor:pointer;
+         font-size:14.5px;font-weight:600;color:#fff;
+         background:linear-gradient(180deg,var(--brand),var(--brand2))}
+  button:hover{filter:brightness(1.05)}
+  .foot{border-top:1px solid #eef1f5;padding:14px 30px;color:var(--muted);font-size:12px;
+        display:flex;justify-content:space-between;background:#fafbfd}
+  .pagefoot{color:#93a0b2;font-size:12px;text-align:center;padding:16px}
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <span>NexGuard Unified Management</span>
+    <span class="env">gw01.corp.internal &middot; 10.20.4.11</span>
+  </div>
+  <div class="wrap">
+    <div class="card">
+      <div class="head">
+        <div class="brand">
+          <svg width="34" height="34" viewBox="0 0 40 40" aria-hidden="true">
+            <rect x="2" y="2" width="36" height="36" rx="9" fill="#1466d8"/>
+            <path d="M20 8l9 4v7c0 6-4 10-9 12-5-2-9-6-9-12v-7l9-4z" fill="#fff"/>
+            <path d="M20 13l4.5 2v3.4c0 3-2 5-4.5 6-2.5-1-4.5-3-4.5-6V15l4.5-2z" fill="#1466d8"/>
+          </svg>
+          <div class="name">Nex<span>Guard</span> OS</div>
+        </div>
+        <p class="sub">Sign in to the management console</p>
+      </div>
+      <form action="/login" method="post" autocomplete="off">
+        <label for="u">Username</label>
+        <input id="u" type="text" name="username" placeholder="e.g. admin" required autofocus>
+        <label for="p">Password</label>
+        <input id="p" type="password" name="password" placeholder="Password" required>
+        <div class="row">
+          <label><input type="checkbox" name="remember"> Keep me signed in</label>
+          <a href="/reset-password">Forgot password?</a>
+        </div>
+        <button type="submit">Sign in</button>
+      </form>
+      <div class="foot">
+        <span>SecureGate NX-3100</span>
+        <span>Firmware 4.2.7-rel</span>
+      </div>
+    </div>
+  </div>
+  <div class="pagefoot">&copy; 2024 NexGuard Systems, Inc. &middot; All rights reserved. &middot; Unauthorized access is prohibited.</div>
+</body>
+</html>"""
 
 
 class _ExclusiveHTTPServer(HTTPServer):

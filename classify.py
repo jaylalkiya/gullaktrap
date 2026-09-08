@@ -21,7 +21,19 @@ RULES = [
     ('xss attempt',          'crit', 'T1059.007'),
     ('delete attempt',       'crit', 'T1070'),
     ('destructive command',  'crit', 'T1070'),
+    ('history cleared',      'crit', 'T1070'),
     ('file upload',          'crit', 'T1105'),
+    ('log4shell',            'crit', 'T1190'),
+    ('jndi injection',       'crit', 'T1190'),
+    ('ssrf attempt',         'crit', 'T1190'),
+    ('xxe attempt',          'crit', 'T1190'),
+    ('shellshock',           'crit', 'T1059'),
+    ('cron persistence',     'crit', 'T1053'),
+    ('ssh key persistence',  'crit', 'T1098'),
+    ('open relay',           'crit', 'T1071.003'),
+    ('mail relay',           'crit', 'T1071.003'),
+    ('eternalblue',          'crit', 'T1210'),
+    ('snmp write',           'crit', 'T1565'),
 
     # --- warning: reconnaissance and access attempts ---
     ('scanner detected',     'warn', 'T1595'),
@@ -41,6 +53,15 @@ RULES = [
     ('post request',         'warn', 'T1595'),
     ('get request',          'warn', 'T1595'),
     ('username provided',    'warn', 'T1589'),
+    ('user enumeration',     'warn', 'T1589'),
+    ('community string',     'warn', 'T1110'),
+    ('snmp query',           'warn', 'T1602'),
+    ('smb negotiate',        'warn', 'T1190'),
+    ('smbv1',                'warn', 'T1210'),
+    ('session setup',        'warn', 'T1110'),
+    ('tree connect',         'warn', 'T1135'),
+    ('client hello',         'warn', 'T1592'),
+    ('message data',         'warn', 'T1071.003'),
 
     # --- operational ---
     ('server started',       'ok',   None),
@@ -53,17 +74,25 @@ RULES = [
 
 TECHNIQUE_NAMES = {
     'T1005':     'Data from Local System',
+    'T1053':     'Scheduled Task/Job',
     'T1059':     'Command and Scripting Interpreter',
     'T1059.007': 'JavaScript Injection',
     'T1070':     'Indicator Removal',
     'T1078':     'Valid Accounts',
     'T1083':     'File and Directory Discovery',
+    'T1098':     'Account Manipulation',
     'T1105':     'Ingress Tool Transfer',
     'T1110':     'Brute Force',
     'T1190':     'Exploit Public-Facing Application',
     'T1222':     'File and Directory Permissions Modification',
     'T1589':     'Gather Victim Identity Information',
+    'T1592':     'Gather Victim Host Information',
     'T1595':     'Active Scanning',
+    'T1071.003': 'Application Layer Protocol: Mail',
+    'T1135':     'Network Share Discovery',
+    'T1210':     'Exploitation of Remote Services',
+    'T1565':     'Data Manipulation',
+    'T1602':     'Data from Configuration Repository',
 }
 
 

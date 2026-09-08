@@ -240,64 +240,87 @@ class SSHHoneypot:
         command_buffer = ""
         commands_executed = 0
         shell_start = time.time()
-        
+        last_char = ''
+        terminate = False
+
         while True:
             try:
                 data = channel.recv(1024)
                 if not data:
                     break
-                
-                char = data.decode('utf-8', errors='ignore')
 
-                # Each keypress is a replay frame; the offset is what lets
-                # playback reproduce the attacker's original typing rhythm.
-                self._hook('keystroke', session_db_id,
-                           time.time() - shell_start, char)
-                
-                # Handle backspace
-                if char == '\x7f':
-                    if command_buffer:
-                        command_buffer = command_buffer[:-1]
-                        channel.send('\b \b')
-                    continue
-                
-                # Echo character
-                if char != '\r' and char != '\n':
+                # A real terminal delivers one keystroke per packet, but
+                # automated clients -- the attack simulator, worms, and any
+                # tool that pastes a whole command -- send the entire line
+                # (or several lines) in one recv. Walk the chunk character by
+                # character so interactive and scripted input are captured
+                # identically.
+                for char in data.decode('utf-8', errors='ignore'):
+                    # Each keypress is a replay frame; the offset is what lets
+                    # playback reproduce the attacker's original typing rhythm.
+                    self._hook('keystroke', session_db_id,
+                               time.time() - shell_start, char)
+
+                    # Swallow the LF half of a CRLF so one line runs once.
+                    if char == '\n' and last_char == '\r':
+                        last_char = char
+                        continue
+                    last_char = char
+
+                    # Handle backspace
+                    if char in ('\x7f', '\b'):
+                        if command_buffer:
+                            command_buffer = command_buffer[:-1]
+                            channel.send('\b \b')
+                        continue
+
+                    # Handle enter -> run the accumulated command
+                    if char == '\r' or char == '\n':
+                        channel.send('\r\n')
+
+                        if command_buffer.strip():
+                            commands_executed += 1
+                            cmd_log = (
+                                f"Session {session_id} | "
+                                f"COMMAND EXECUTED | "
+                                f"User: {username} | "
+                                f"Command #{commands_executed}: '{command_buffer.strip()}'"
+                            )
+                            self.log_attack('Shell Command', cmd_log)
+                            self._hook('command', 'ssh', client_ip,
+                                       command_buffer.strip(), session_db_id)
+
+                            # Execute command
+                            output = self._execute_command(
+                                command_buffer.strip(), session_id,
+                                session_db_id=session_db_id,
+                                client_ip=client_ip)
+                            # `exit` returns None -- honour it instead of
+                            # redrawing the prompt forever.
+                            if output is None:
+                                channel.send('logout\r\n')
+                                terminate = True
+                                command_buffer = ""
+                                break
+                            if output:
+                                channel.send(output + '\r\n')
+
+                        command_buffer = ""
+                        channel.send(f"{username}@honeypot:~$ ")
+                        continue
+
+                    # Ignore remaining control characters (Ctrl-C, arrows,
+                    # escape sequences) but keep them out of the command.
+                    if ord(char) < 32:
+                        continue
+
+                    # Printable: echo and buffer.
                     command_buffer += char
                     channel.send(char)
-                
-                # Handle enter
-                if char == '\r' or char == '\n':
-                    channel.send('\r\n')
-                    
-                    if command_buffer.strip():
-                        commands_executed += 1
-                        cmd_log = (
-                            f"Session {session_id} | "
-                            f"COMMAND EXECUTED | "
-                            f"User: {username} | "
-                            f"Command #{commands_executed}: '{command_buffer.strip()}'"
-                        )
-                        self.log_attack('Shell Command', cmd_log)
-                        self._hook('command', 'ssh', client_ip,
-                                   command_buffer.strip(), session_db_id)
-                        
-                        # Execute command
-                        output = self._execute_command(
-                            command_buffer.strip(), session_id,
-                            session_db_id=session_db_id,
-                            client_ip=client_ip)
-                        # `exit` returns None -- honour it instead of
-                        # redrawing the prompt forever.
-                        if output is None:
-                            channel.send('logout\r\n')
-                            break
-                        if output:
-                            channel.send(output + '\r\n')
-                    
-                    command_buffer = ""
-                    channel.send(f"{username}@honeypot:~$ ")
-                    
+
+                if terminate:
+                    break
+
             except Exception:
                 break
         
@@ -410,7 +433,30 @@ class SSHHoneypot:
             chmod_log = f"Session {session_id} | Permission change attempt: '{command}'"
             self.log_attack('Permission Change', chmod_log)
             return ""
-        
+
+        # SSH-key persistence -- dropping a public key into authorized_keys is
+        # the classic way to keep access after the password is rotated.
+        elif 'authorized_keys' in cmd or cmd.startswith('ssh-keygen'):
+            self.log_attack(
+                'SSH Key Persistence',
+                f"Session {session_id} | PERSISTENCE (ssh authorized_keys) | Command: '{command}'")
+            return ""
+
+        # Scheduled-task persistence via cron / systemd.
+        elif 'crontab' in cmd or '/etc/cron' in cmd or 'systemctl enable' in cmd:
+            self.log_attack(
+                'Cron Persistence',
+                f"Session {session_id} | PERSISTENCE (scheduled task) | Command: '{command}'")
+            return ""
+
+        # Defense evasion -- wiping shell history / disabling logging.
+        elif (('history' in cmd and ('-c' in cmd or '-w' in cmd))
+              or 'histfile' in cmd or cmd.startswith('unset hist')):
+            self.log_attack(
+                'History Cleared',
+                f"Session {session_id} | DEFENSE EVASION (history cleared) | Command: '{command}'")
+            return ""
+
         # exit/logout
         elif cmd in ['exit', 'logout', 'quit']:
             return None
