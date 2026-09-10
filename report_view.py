@@ -21,7 +21,7 @@ REPORT_TEMPLATE = r"""<!DOCTYPE html>
 <style>
   :root{
     --ink:#14181f; --muted:#5b6472; --line:#e2e6ec; --bg:#f4f6f9;
-    --card:#ffffff; --brand:#4f46e5; --crit:#e11d48; --warn:#d97706;
+    --card:#ffffff; --brand:#0d7a52; --crit:#e11d48; --warn:#d97706;
     --ok:#2fa860; --info:#2f7fe0;
   }
   *{box-sizing:border-box}
@@ -60,7 +60,7 @@ REPORT_TEMPLATE = r"""<!DOCTYPE html>
   tr:last-child td{border-bottom:0;}
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;}
   .mono{font-family:ui-monospace,Consolas,monospace;font-size:12px;}
-  .tag{display:inline-block;background:#f0e6ff;color:var(--brand);
+  .tag{display:inline-block;background:#e4f4ec;color:var(--brand);
        border-radius:20px;padding:1px 8px;font-size:11px;margin:1px 2px;}
   .sev{display:inline-block;width:9px;height:9px;border-radius:50%;
        margin-right:6px;vertical-align:middle;}
@@ -74,6 +74,8 @@ REPORT_TEMPLATE = r"""<!DOCTYPE html>
          border-radius:10px;}
   .spark i{flex:1;background:var(--brand);border-radius:2px 2px 0 0;
            min-height:2px;opacity:.85;}
+  .spark i[style*="height:0%"],.spark i[style*="height: 0%"]{
+           background:#e4e8ee;}
   .empty{color:var(--muted);padding:14px;background:var(--card);
          border:1px dashed var(--line);border-radius:10px;}
   footer.rpt{margin-top:40px;color:var(--muted);font-size:11px;
@@ -110,7 +112,7 @@ REPORT_TEMPLATE = r"""<!DOCTYPE html>
   <h2 class="section">Executive summary</h2>
   <div class="kpis">
     <div class="kpi"><div class="n">{{ ov.events }}</div><div class="l">Total events</div></div>
-    <div class="kpi"><div class="n">{{ ov.events_24h }}</div><div class="l">Last 24 h</div></div>
+    <div class="kpi"><div class="n">{{ ov.events_24h }}</div><div class="l">Last 24h</div></div>
     <div class="kpi crit"><div class="n">{{ ov.critical }}</div><div class="l">Critical</div></div>
     <div class="kpi"><div class="n">{{ ov.attackers }}</div><div class="l">Unique sources</div></div>
     <div class="kpi"><div class="n">{{ ov.sessions }}</div><div class="l">Sessions</div></div>

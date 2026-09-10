@@ -94,7 +94,7 @@
     var span = Math.min(900, 220 + Math.abs(value - from) * 9);
 
     (function step(now) {
-      var t = Math.min(1, (now - start) / span);
+      var t = Math.max(0, Math.min(1, (now - start) / span));
       var eased = 1 - Math.pow(1 - t, 3);           // ease-out cubic
       el.textContent = Math.round(from + (value - from) * eased)
         .toLocaleString();
@@ -135,10 +135,20 @@
     var ctx = c.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    if (this.data.length < 2) return;
+    if (this.data.length < 2) {
+      // Nothing to plot yet -- hold the baseline so the slot looks idle
+      // rather than broken.
+      ctx.strokeStyle = css('--line-soft') || '#0a3623';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, h - 1.5);
+      ctx.lineTo(w, h - 1.5);
+      ctx.stroke();
+      return;
+    }
 
     var max = Math.max.apply(null, this.data) || 1;
-    var stepX = w / (this.keep - 1);
+    var stepX = w / (this.data.length - 1);
     var color = c.dataset.color || css('--hot') || '#2fe36b';
 
     var pts = this.data.map(function (v, i) {

@@ -44,6 +44,25 @@ def apply_bind_policy(sock):
     return sock
 
 
+def lan_ip():
+    """This host's address on the local network, or None if it has none.
+
+    Opening a UDP socket toward an off-link address makes the routing table
+    pick the interface that would carry real traffic, which is the address
+    an attacker on the LAN would connect to. No packet is ever sent, so
+    this works with no network and no name resolution.
+    """
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(('192.0.2.1', 9))      # RFC 5737, never routed
+        ip = probe.getsockname()[0]
+    except OSError:
+        return None
+    finally:
+        probe.close()
+    return None if ip.startswith('127.') else ip
+
+
 def describe_port(port):
     """Human-readable reason the port cannot be used, or None if it is free.
 

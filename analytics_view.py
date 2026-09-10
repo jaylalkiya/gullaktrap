@@ -25,12 +25,17 @@ ANALYTICS_TEMPLATE = """
   transition:all .2s;background:transparent;
 }
 .nav a:hover{border-color:var(--hot);color:var(--hot)}
-.logout-btn{position:absolute;top:20px;right:20px;border-color:var(--alert);
-  color:var(--alert)}
-.logout-btn:hover{background:var(--alert);color:var(--bg)}
+.logout-btn{position:absolute;top:20px;right:20px}
+.logout-btn:hover{border-color:var(--alert);color:var(--alert);
+  background:rgba(var(--alert-rgb),.08)}
 
-.grid{display:grid;gap:16px;margin-bottom:18px}
-.g4{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+/* align-items:start so a short panel keeps its own height instead of
+   stretching to match the tall one beside it. */
+.grid{display:grid;gap:16px;margin-bottom:18px;align-items:start}
+.g4{grid-template-columns:repeat(4,1fr)}
+@media (max-width:1080px){.g4{grid-template-columns:repeat(3,1fr)}}
+@media (max-width:760px){.g4{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:420px){.g4{grid-template-columns:1fr}}
 .g2{grid-template-columns:repeat(auto-fit,minmax(400px,1fr))}
 
 .card{
@@ -123,8 +128,30 @@ tbody tr:hover{background:var(--bg-3)}
 .flag.on{border-color:var(--hot);color:var(--hot)}
 #map{height:440px;border-radius:12px;overflow:hidden;background:#0b0f14}
 .leaflet-container{font-family:inherit;background:#0b0f14}
-.map-actions{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
-.map-actions .btn{cursor:pointer;border:0;font:inherit}
+/* OSM ships light tiles; invert + tint them into the terminal palette. */
+.leaflet-tile-pane{
+  filter:invert(1) hue-rotate(180deg) brightness(.62) contrast(1.05)
+         saturate(.45);
+}
+.leaflet-control-attribution{
+  background:rgba(0,0,0,.55)!important;color:var(--dim)!important;
+  font-size:.62rem!important;
+}
+.leaflet-control-attribution a{color:var(--muted)!important}
+.leaflet-control-zoom a{
+  background:var(--bg-2)!important;color:var(--hot)!important;
+  border-color:var(--line)!important;
+}
+/* Shown instead of an empty 440px map when there is nothing to plot. */
+.map-empty{
+  border:1px dashed var(--line);border-radius:var(--radius);
+  padding:22px;color:var(--muted);font-size:.84em;line-height:1.7;
+}
+.map-empty b{color:var(--text)}
+.map-empty code{
+  color:var(--hot);background:rgba(var(--hot-rgb),.08);
+  padding:1px 6px;border-radius:3px;
+}
 .mono-flag{font-size:15px;margin-right:4px}
 </style>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -145,10 +172,7 @@ tbody tr:hover{background:var(--bg-3)}
 
   <div class="card rise rise-1">
     <h2>Attack origins &mdash; world map</h2>
-    <div class="map-actions">
-      <a class="btn" href="/report" target="_blank">&#128196; Generate PDF report</a>
-      <span id="mapnote" class="empty" style="padding:6px 10px"></span>
-    </div>
+    <div id="mapnote"></div>
     <div id="map"></div>
   </div>
 
@@ -359,23 +383,33 @@ async function loadMap(){
   const d = await (await fetch('/api/map')).json();
   const pts = d.points || [];
   const note = document.getElementById('mapnote');
+  const mapEl = document.getElementById('map');
   if(!_map){
-    _map = L.map('map', {worldCopyJump:true, attributionControl:false,
-                         minZoom:1}).setView([25, 10], 2);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-      {subdomains:'abcd', maxZoom:19}).addTo(_map);
+    _map = L.map('map', {worldCopyJump:true, minZoom:1})
+             .setView([25, 10], 2);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      {maxZoom:19,
+       attribution:'&copy; OpenStreetMap contributors'}).addTo(_map);
     _markers = L.layerGroup().addTo(_map);
   }
   _markers.clearLayers();
   if(!pts.length){
-    note.textContent = d.geoip
-      ? 'No geolocated attackers yet — local/private source IPs (like your own tests from 127.0.0.1) are not placed on the map. Real remote attackers will appear here.'
-      : 'Geolocation is off. Start the honeypot with GULLAKTRAP_GEOIP=1 to place real attacker IPs on the map.';
+    note.className = 'map-empty';
+    note.innerHTML = d.geoip
+      ? '<b>No geolocated attackers yet.</b><br>Loopback and private ' +
+        'source IPs — including your own simulator runs — are never ' +
+        'plotted. Real remote attackers will appear here.'
+      : '<b>Geolocation is off.</b><br>Restart with ' +
+        '<code>GULLAKTRAP_GEOIP=1</code> to place attacker IPs on the map.';
     note.style.display = '';
+    mapEl.style.display = 'none';
     return;
   }
   note.style.display = 'none';
-  note.textContent = '';
+  note.className = '';
+  note.innerHTML = '';
+  mapEl.style.display = '';
+  _map.invalidateSize();
   const max = Math.max.apply(null, pts.map(p=>p.events).concat([1]));
   pts.forEach(function(p){
     if(p.lat==null || p.lon==null) return;

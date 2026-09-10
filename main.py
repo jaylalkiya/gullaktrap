@@ -1,7 +1,9 @@
 """
-Freak-Pot Honeypot System with Authentication
-A Joker-themed modular honeypot with HTTP, FTP, and SSH protocols
-Enhanced with custom configuration and file upload support
+GullakTrap -- Flask console, event sink and dashboard.
+
+Serves the operator console on :5000, owns the seven sensors' lifecycle,
+and funnels every captured event through classification, threat-intel
+enrichment, storage and alerting. Run this module to start the console.
 """
 
 from flask import (Flask, render_template_string, jsonify, request,
@@ -38,6 +40,7 @@ from telnet_honeypot import TelnetHoneypot
 from smb_honeypot import SMBHoneypot
 from smtp_honeypot import SMTPHoneypot
 from snmp_honeypot import SNMPHoneypot
+import netutil
 import storage
 import intel
 import alerting
@@ -76,6 +79,19 @@ honeypots = {
     'smb': None,
     'smtp': None,
     'snmp': None
+}
+
+# Default listen port per sensor. The console form is rendered from this
+# dict and the startup screen prints it, so the two can never disagree.
+# Ports under 1024 need Administrator/root; the console accepts any port.
+SENSOR_DEFAULTS = {
+    'http': 8080,
+    'ftp': 2121,
+    'ssh': 2222,
+    'telnet': 2323,
+    'smb': 445,
+    'smtp': 25,
+    'snmp': 161,
 }
 
 # Store logs
@@ -232,7 +248,7 @@ LOGIN_TEMPLATE = """
         .login-header{ text-align:center; margin-bottom:24px; }
         .login-header .wordmark{ font-size:2.3rem; }
         .login-header .brand-tag{ margin-top:.5rem; }
-        .joker-quote{
+        .quote-bar{
             color:var(--muted); font-size:.86rem; font-style:italic;
             background:var(--bg-3); border:1px solid var(--line-soft);
             border-left:3px solid var(--accent);
@@ -271,7 +287,7 @@ LOGIN_TEMPLATE = """
             <div class="brand-tag">{{ brand.tagline }} &middot; access control</div>
         </div>
         
-        <div class="joker-quote">
+        <div class="quote-bar">
             &gt; {{ brand.quotes[0] }}
         </div>
         
@@ -333,7 +349,7 @@ HTML_TEMPLATE = """
         .logout-btn:hover{ border-color:var(--hot); color:var(--hot); }
         .logout-btn.danger:hover{ border-color:var(--alert); color:var(--alert); background:rgba(var(--alert-rgb),.08); }
 
-        .joker-quote{
+        .quote-bar{
             color:var(--muted); font-size:.9rem; font-style:italic;
             background:var(--bg-2); border:1px solid var(--line-soft);
             border-left:3px solid var(--accent); border-radius:var(--radius-sm);
@@ -341,13 +357,20 @@ HTML_TEMPLATE = """
         }
 
         .stats{
-            display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+            display:grid; grid-template-columns:repeat(4,1fr);
             gap:14px; margin-bottom:20px;
         }
+        @media (max-width:1080px){ .stats{grid-template-columns:repeat(3,1fr)} }
+        @media (max-width:760px){ .stats{grid-template-columns:repeat(2,1fr)} }
+        @media (max-width:420px){ .stats{grid-template-columns:1fr} }
         .stat-card{ padding:18px 18px 14px; }
         .stat-card .stat-number{
             font-size:2rem; font-weight:700; color:var(--hot);
             text-shadow:0 0 14px rgba(var(--hot-rgb),.5);
+        }
+        .stat-card .stat-spark{
+            display:block; width:100%; height:26px;
+            margin:10px 0 2px; opacity:.9;
         }
         .stat-card .stat-label{
             color:var(--muted); font-size:.73rem; text-transform:uppercase;
@@ -437,8 +460,8 @@ HTML_TEMPLATE = """
             </div>
         </div>
         
-        <div class="joker-quote" id="quote">
-            > Madness is like gravity... all it takes is a little push!
+        <div class="quote-bar" id="quote">
+            &gt; {{ brand.quotes[0] }}
         </div>
         
         <div class="stats">
@@ -496,7 +519,7 @@ HTML_TEMPLATE = """
                 
                 <div class="config">
                     <label class="config-label">Port Number</label>
-                    <input type="number" id="http-port" placeholder="Port" value="8080">
+                    <input type="number" id="http-port" placeholder="Port" value="{{ ports.http }}">
                     
                     <div class="http-advanced">
                         <label class="config-label">Server Banner</label>
@@ -533,7 +556,7 @@ HTML_TEMPLATE = """
                 
                 <div class="config">
                     <label class="config-label">Port Number</label>
-                    <input type="number" id="ftp-port" placeholder="Port" value="2121">
+                    <input type="number" id="ftp-port" placeholder="Port" value="{{ ports.ftp }}">
                     
                     <div class="ftp-advanced">
                         <label class="config-label">FTP Server Banner</label>
@@ -571,7 +594,7 @@ HTML_TEMPLATE = """
                 
                 <div class="config">
                     <label class="config-label">Port Number</label>
-                    <input type="number" id="ssh-port" placeholder="Port" value="2222">
+                    <input type="number" id="ssh-port" placeholder="Port" value="{{ ports.ssh }}">
                     
                     <div class="ssh-advanced">
                         <label class="config-label">SSH Server Banner</label>
@@ -610,7 +633,7 @@ HTML_TEMPLATE = """
 
                 <div class="config">
                     <label class="config-label">Port Number</label>
-                    <input type="number" id="telnet-port" placeholder="Port" value="2323">
+                    <input type="number" id="telnet-port" placeholder="Port" value="{{ ports.telnet }}">
 
                     <label class="config-label">Device Banner</label>
                     <select id="telnet-banner">
@@ -637,7 +660,7 @@ HTML_TEMPLATE = """
 
                 <div class="config">
                     <label class="config-label">Port Number</label>
-                    <input type="number" id="smb-port" placeholder="Port" value="445">
+                    <input type="number" id="smb-port" placeholder="Port" value="{{ ports.smb }}">
 
                     <label class="config-label">Pretend To Be</label>
                     <select id="smb-banner">
@@ -661,7 +684,7 @@ HTML_TEMPLATE = """
 
                 <div class="config">
                     <label class="config-label">Port Number</label>
-                    <input type="number" id="smtp-port" placeholder="Port" value="25">
+                    <input type="number" id="smtp-port" placeholder="Port" value="{{ ports.smtp }}">
 
                     <label class="config-label">SMTP Banner</label>
                     <select id="smtp-banner">
@@ -685,7 +708,7 @@ HTML_TEMPLATE = """
 
                 <div class="config">
                     <label class="config-label">Port Number (UDP)</label>
-                    <input type="number" id="snmp-port" placeholder="Port" value="161">
+                    <input type="number" id="snmp-port" placeholder="Port" value="{{ ports.snmp }}">
 
                     <label class="config-label">Reported sysDescr</label>
                     <select id="snmp-banner">
@@ -1240,7 +1263,7 @@ def logout():
 @login_required
 def index():
     return render_template_string(HTML_TEMPLATE, brand=BRAND, theme=theme_css(),
-                               quotes=BRAND['quotes'])
+                               quotes=BRAND['quotes'], ports=SENSOR_DEFAULTS)
 
 @app.route('/upload_html', methods=['POST'])
 @login_required
@@ -1673,46 +1696,63 @@ def api_export(table):
 
 
 if __name__ == '__main__':
+    import logging
+    import flask.cli
     from branding import cc, cli_glyphs
 
     ON, OFF, AR, HR = cli_glyphs()
-    RULE = cc('92', '  ' + HR * 58)
+    WIDTH = 58
+    RULE = cc('92', '  ' + HR * WIDTH)
+
+    def _head(title):
+        """Blank line, section heading, rule -- the shape of every block."""
+        print()
+        print('  ' + cc('96;1', AR + ' ' + title))
+        print(RULE)
 
     print()
-    print(cc('92;1', console_banner()))
-    print()
+    for _line in console_banner(WIDTH - 2).splitlines():
+        print(cc('92;1', '  ' + _line))
 
     # ---- operator credential setup ----------------------------------
     # Credentials come from the environment when set, so the console can
     # start unattended (scripts, containers, CI). getpass reads the Windows
     # console directly and ignores redirected stdin, so without this the
     # app can only ever be launched by hand from a real terminal.
-    print('  ' + cc('96;1', AR + ' SECURE CONSOLE ACCESS'))
-    print(RULE)
+    _head('SECURE CONSOLE ACCESS')
 
     AUTH_USERNAME = os.environ.get('HONEYPOT_USER')
     AUTH_PASSWORD = os.environ.get('HONEYPOT_PASS')
 
+    def _field(label):
+        """Aligned input label: two-space gutter, padded name, thin caret."""
+        return ('     ' + cc('97', label.ljust(9))
+                + cc('92;1', ':') + '  ')
+
     if AUTH_USERNAME and AUTH_PASSWORD:
-        print('  ' + cc('92', ON) + '  credentials loaded from '
+        print('  ' + cc('92', ON) + '  credentials read from '
               + cc('96', 'HONEYPOT_USER / HONEYPOT_PASS'))
     else:
-        print(cc('90', '  set the operator id + password that unlock the dashboard'))
+        print('  ' + cc('90', OFF) + '  '
+              + cc('90', 'no credentials in the environment'))
+        print(cc('90', '     create the login that unlocks this dashboard'))
         print()
         try:
-            AUTH_USERNAME = input(cc('92;1', '  ' + AR + ' operator id  ')
-                                  + cc('90', ': ')).strip()
-            sys.stdout.write(cc('92;1', '  ' + AR + ' password     ')
-                             + cc('90', ': '))
+            AUTH_USERNAME = input(_field('username')).strip()
+            sys.stdout.write(_field('password'))
             sys.stdout.flush()
             AUTH_PASSWORD = getpass.getpass('').strip()
         except (EOFError, KeyboardInterrupt):
-            print(cc('91', '\n  [x] aborted -- set HONEYPOT_USER and '
-                           'HONEYPOT_PASS to start unattended.'))
+            print()
+            print('  ' + cc('91', '[x] aborted -- set HONEYPOT_USER and '
+                                  'HONEYPOT_PASS to start unattended.'))
             sys.exit(1)
+        print()
+        print('  ' + cc('92', ON) + '  operator login set for this session')
 
     if not AUTH_USERNAME or not AUTH_PASSWORD:
-        print(cc('91', '\n  [x] id and password cannot be empty.'))
+        print()
+        print(cc('91', '  [x] id and password cannot be empty.'))
         sys.exit(1)
 
     # ---- status board ------------------------------------------------
@@ -1721,11 +1761,13 @@ if __name__ == '__main__':
         return '  %s  %s %s' % (dot, cc('96', label.ljust(9)), value)
 
     geo, alr, pay = intel.enabled(), alerting.configured(), capture.fetching_enabled()
+    lan = netutil.lan_ip()
 
-    print()
-    print(RULE)
+    _head('DECEPTION GRID')
     print(_row(True, 'OPERATOR', cc('97;1', AUTH_USERNAME)))
     print(_row(True, 'CONSOLE',  cc('92;1', 'http://localhost:5000')))
+    if lan:
+        print(_row(True, 'NETWORK', cc('97', 'http://%s:5000' % lan)))
     print(_row(True, 'DATABASE', cc('97', DB_FILE)))
     print(_row(geo, 'GEOIP', cc('92', 'enabled') if geo
               else cc('90', 'off (set GULLAKTRAP_GEOIP=1)')))
@@ -1733,12 +1775,52 @@ if __name__ == '__main__':
               else cc('90', 'off (set GULLAKTRAP_WEBHOOK)')))
     print(_row(pay, 'PAYLOADS', cc('92', 'downloading to quarantine/') if pay
               else cc('90', 'URL only (set GULLAKTRAP_FETCH_PAYLOADS=1)')))
-    print(_row(True, 'SENSORS', cc('97', 'HTTP  FTP  SSH  TELNET  SMB  SMTP  SNMP')))
+
+    # ---- sensor line-up ----------------------------------------------
+    # Every sensor starts dark: nothing binds a port until the operator arms
+    # it from the console, so this board shows the line-up and its default
+    # ports rather than claiming anything is listening.
+    _head('SENSORS' + cc('90', '   idle until armed from the console'))
+
+    cells, privileged = [], False
+    for _name, _port in SENSOR_DEFAULTS.items():
+        privileged = privileged or _port < 1024
+        cells.append('%s  %s%s%s' % (
+            cc('90', OFF),
+            cc('97', _name.upper().ljust(7)),
+            cc('96', str(_port).rjust(4)),
+            cc('93', '*') if _port < 1024 else ' '))
+    for _i in range(0, len(cells), 3):
+        print(('  ' + '   '.join(cells[_i:_i + 3])).rstrip())
+
+    print(cc('90', '     SNMP listens on UDP; every other sensor is TCP.'))
+    if privileged:
+        print(cc('90', '     * under 1024 -- needs Administrator, or pick a '
+                       'high port'))
+
     print(RULE)
     print(cc('95', '  ' + BRAND['quotes'][0]))
     print()
     print('  ' + cc('92;1', AR + ' console ready')
           + cc('90', '  ->  ') + cc('96;1', 'http://localhost:5000'))
+    print('  ' + cc('90', '  test the pipeline  ->  ')
+          + cc('97', 'python attack_sim.py')
+          + cc('90', '     stop  ->  ') + cc('97', 'Ctrl+C'))
     print()
+
+    # Flask and Werkzeug print their own boot notice right after ours -- the
+    # dev-server warning, the bind addresses and a CTRL+C hint. It repeats
+    # what the board above already says and buries the console URL, so drop
+    # just those lines. Request logs and real warnings still come through.
+    flask.cli.show_server_banner = lambda *a, **kw: None
+
+    class _QuietBoot(logging.Filter):
+        NOISE = ('development server', 'Running on', 'Press CTRL+C')
+
+        def filter(self, record):
+            msg = str(record.getMessage())
+            return not any(s in msg for s in self.NOISE)
+
+    logging.getLogger('werkzeug').addFilter(_QuietBoot())
 
     app.run(host='0.0.0.0', port=5000, debug=False)

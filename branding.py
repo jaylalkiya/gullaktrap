@@ -79,11 +79,18 @@ def _console_supports(text):
         return False
 
 
-def console_banner():
-    """Box-drawn startup banner. Adapts to any BRAND name length."""
+def console_banner(width=None):
+    """Box-drawn startup banner. Adapts to any BRAND name length.
+
+    `width` fixes the inner width so the banner can be lined up with the
+    rest of the console furniture (rules, status rows). Left unset, the
+    box sizes itself to the wordmark.
+    """
     name = ' '.join(BRAND['name'].upper())
     sub = '%s  %s' % (BRAND['tagline'], BRAND['version'])
-    width = max(len(name), len(sub), 38) + 6
+    natural = max(len(name), len(sub), 38) + 6
+    width = natural if width is None else max(int(width), len(name) + 2,
+                                              len(sub) + 2)
 
     if _console_supports('╔═╗║╚╝'):
         tl, tr, bl, br, h, v = '╔', '╗', '╚', '╝', '═', '║'
