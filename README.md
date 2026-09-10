@@ -13,6 +13,7 @@ a live console.
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)]()
 [![Sensors](https://img.shields.io/badge/sensors-7-00ff9c.svg)]()
 [![Status](https://img.shields.io/badge/status-v2.0-brightgreen.svg)]()
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ![The GullakTrap console](docs/console.png)
 
@@ -330,5 +331,5 @@ Built by **Jay Lalkiya** — [GitHub](https://github.com/jaylalkiya)
 
 ## License
 
-No license has been specified for this project yet. Until one is added, all
-rights are reserved and the code is not licensed for redistribution or reuse.
+Released under the [MIT License](LICENSE) — free to use, modify and
+redistribute, with attribution and no warranty.
